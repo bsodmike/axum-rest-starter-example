@@ -1,9 +1,9 @@
 use axum::{extract::Form, response::Html, routing::get, Router};
+use redis::{AsyncCommands, AsyncIter};
 use redis::{Commands, Connection, RedisError, RedisResult};
 use serde::Deserialize;
 use std::env;
 use std::net::SocketAddr;
-use redis::{AsyncCommands, AsyncIter};
 
 #[tokio::main]
 async fn main() {
@@ -59,24 +59,21 @@ struct Input {
 async fn accept_form(Form(input): Form<Input>) {
     dbg!(&input);
 
-    save_form(&input)
-        .await; // TODO: This needs to be handled
+    save_form(&input).await; // TODO: This needs to be handled
 }
 
 async fn save_form(input: &Input) -> redis::RedisResult<()> {
     //let client = redis::Client::open("redis://127.0.0.1/").unwrap();
     //let mut con = client.get_async_connection().await?;
     let client = connect();
-    let mut con = client
-        .await
-        .get_async_connection().await?;
+    let mut con = client.await.get_async_connection().await?;
 
-    let name  = input.name.to_owned();
+    let name = input.name.to_owned();
     let name_str = &name[..];
 
     con.set("async-key1", name_str).await?;
     let result: String = con.get("async-key1").await?;
-	println!("->> my_key: {}\n", result);
+    println!("->> my_key: {}\n", result);
 
     Ok(())
 }
@@ -96,10 +93,10 @@ async fn connect() -> redis::Client {
         Err(_) => "redis",
     };
 
-    let redis_conn_url = format!("{}://{}:{}/{}", uri_scheme,
-                                 redis_host_name,
-                                 redis_port,
-                                 redis_db);
+    let redis_conn_url = format!(
+        "{}://{}:{}/{}",
+        uri_scheme, redis_host_name, redis_port, redis_db
+    );
     //println!("{}", redis_conn_url);
 
     let client = redis::Client::open(redis_conn_url).expect("Failed to connect to Redis");
