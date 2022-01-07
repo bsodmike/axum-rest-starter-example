@@ -1,0 +1,8 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis
+    container_name: app_redis
+    ports:
+      - "6400:6379"
