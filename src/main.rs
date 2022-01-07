@@ -63,8 +63,6 @@ async fn accept_form(Form(input): Form<Input>) {
 }
 
 async fn save_form(input: &Input) -> redis::RedisResult<()> {
-    //let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    //let mut con = client.get_async_connection().await?;
     let client = connect();
     let mut con = client.await.get_async_connection().await?;
 
@@ -99,8 +97,5 @@ async fn connect() -> redis::Client {
     );
     //println!("{}", redis_conn_url);
 
-    let client = redis::Client::open(redis_conn_url).expect("Failed to connect to Redis");
-
-    client
-    //client.get_connection().expect("Failed to get connection")
+    redis::Client::open(redis_conn_url).expect("Failed to connect to Redis")
 }
