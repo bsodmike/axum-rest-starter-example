@@ -1,6 +1,9 @@
 use axum::{extract::Form, response::Html, routing::get, Router};
+use redis::{Commands, Connection, RedisError, RedisResult};
 use serde::Deserialize;
+use std::env;
 use std::net::SocketAddr;
+use redis::{AsyncCommands, AsyncIter};
 
 #[tokio::main]
 async fn main() {
@@ -55,4 +58,52 @@ struct Input {
 
 async fn accept_form(Form(input): Form<Input>) {
     dbg!(&input);
+
+    save_form(&input)
+        .await; // TODO: This needs to be handled
+}
+
+async fn save_form(input: &Input) -> redis::RedisResult<()> {
+    //let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+    //let mut con = client.get_async_connection().await?;
+    let client = connect();
+    let mut con = client
+        .await
+        .get_async_connection().await?;
+
+    let name  = input.name.to_owned();
+    let name_str = &name[..];
+
+    con.set("async-key1", name_str).await?;
+    let result: String = con.get("async-key1").await?;
+	println!("->> my_key: {}\n", result);
+
+    Ok(())
+}
+
+// TODO move redis related logic to a module
+async fn connect() -> redis::Client {
+    //let redis_host_name =
+    //  env::var("REDIS_HOSTNAME").expect("missing environment variable REDIS_HOSTNAME");
+    //let redis_password = env::var("REDIS_PASSWORD").unwrap_or_default();
+    let redis_host_name = "127.0.0.1";
+    let redis_db = 0;
+    let redis_port = 6400;
+
+    //if Redis server needs secure connection
+    let uri_scheme = match env::var("IS_TLS") {
+        Ok(_) => "rediss",
+        Err(_) => "redis",
+    };
+
+    let redis_conn_url = format!("{}://{}:{}/{}", uri_scheme,
+                                 redis_host_name,
+                                 redis_port,
+                                 redis_db);
+    //println!("{}", redis_conn_url);
+
+    let client = redis::Client::open(redis_conn_url).expect("Failed to connect to Redis");
+
+    client
+    //client.get_connection().expect("Failed to get connection")
 }
