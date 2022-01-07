@@ -1,6 +1,5 @@
 use axum::{extract::Form, response::Html, routing::get, Router};
-use redis::{AsyncCommands, AsyncIter};
-use redis::{Commands, Connection, RedisError, RedisResult};
+use redis::AsyncCommands;
 use serde::Deserialize;
 use std::env;
 use std::net::SocketAddr;
@@ -59,7 +58,10 @@ struct Input {
 async fn accept_form(Form(input): Form<Input>) {
     dbg!(&input);
 
-    save_form(&input).await; // TODO: This needs to be handled
+    match save_form(&input).await {
+        Ok(_) => (),
+        Err(e) => tracing::error!("Failed: {:?}", e),
+    }
 }
 
 async fn save_form(input: &Input) -> redis::RedisResult<()> {
