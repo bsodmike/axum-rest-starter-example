@@ -116,7 +116,7 @@ struct Input {
 async fn accept_form(
     Form(input): Form<Input>,
     state: Extension<AppState>,
-) -> ApiResult<StatusCode> {
+) -> Redirect {
     dbg!(&input);
 
     match save_form(&input, &state).await {
@@ -124,7 +124,7 @@ async fn accept_form(
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
 
-    Ok(StatusCode::OK)
+    Redirect::to("/".parse().unwrap())
 }
 
 async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
