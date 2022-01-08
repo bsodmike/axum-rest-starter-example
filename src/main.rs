@@ -3,7 +3,7 @@ use axum::{
     async_trait,
     extract::{Extension, Form, Path},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
+use tower::{limit::ConcurrencyLimitLayer, ServiceBuilder};
+use tower_http::trace::TraceLayer;
 
 pub mod configure;
 pub mod errors;
@@ -45,6 +47,11 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     settings
 });
 
+#[derive(Clone)]
+struct AppState {
+    redis_client: redis::Client,
+}
+
 #[tokio::main]
 async fn main() {
     // Set the RUST_LOG, if it hasn't been explicitly defined
@@ -54,7 +61,15 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // build our application with some routes
-    let app = Router::new().route("/", get(show_form).post(accept_form));
+    let app = Router::new()
+        .route("/", get(show_form).post(accept_form))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(AddExtensionLayer::new(AppState {
+                    redis_client: crate::wrappers::redis_wrapper::connect().await,
+                })),
+        );
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -96,18 +111,18 @@ struct Input {
     email: String,
 }
 
-async fn accept_form(Form(input): Form<Input>) {
+async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) {
     dbg!(&input);
 
-    match save_form(&input).await {
+    match save_form(&input, &state).await {
         Ok(_) => (),
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
 }
 
-async fn save_form(input: &Input) -> redis::RedisResult<()> {
-    let client = crate::wrappers::redis_wrapper::connect();
-    let mut con = client.await.get_async_connection().await?;
+async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
+    let client = &state.redis_client;
+    let mut con = client.get_async_connection().await?;
 
     let name = input.name.to_owned();
     let name_str = &name[..];
