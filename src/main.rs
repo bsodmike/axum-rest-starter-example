@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use axum::{
     async_trait,
     extract::{Extension, Form, Path},
@@ -17,6 +18,7 @@ use std::net::SocketAddr;
 
 pub mod configure;
 pub mod errors;
+pub mod wrappers;
 
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     let mut glob_path = "conf/development/*";
@@ -50,10 +52,6 @@ async fn main() {
         std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
     }
     tracing_subscriber::fmt::init();
-
-    let redis_host_name: String =
-        configure::fetch::<String>(String::from("redis_host_name")).unwrap();
-    println!("->> redis_host_name: {}\n", redis_host_name);
 
     // build our application with some routes
     let app = Router::new().route("/", get(show_form).post(accept_form));
@@ -108,7 +106,7 @@ async fn accept_form(Form(input): Form<Input>) {
 }
 
 async fn save_form(input: &Input) -> redis::RedisResult<()> {
-    let client = connect();
+    let client = crate::wrappers::redis_wrapper::connect();
     let mut con = client.await.get_async_connection().await?;
 
     let name = input.name.to_owned();
@@ -119,28 +117,4 @@ async fn save_form(input: &Input) -> redis::RedisResult<()> {
     println!("->> my_key: {}\n", result);
 
     Ok(())
-}
-
-// TODO move redis related logic to a module
-async fn connect() -> redis::Client {
-    //let redis_host_name =
-    //  env::var("REDIS_HOSTNAME").expect("missing environment variable REDIS_HOSTNAME");
-    //let redis_password = env::var("REDIS_PASSWORD").unwrap_or_default();
-    let redis_host_name = "127.0.0.1";
-    let redis_db = 0;
-    let redis_port = 6400;
-
-    //if Redis server needs secure connection
-    let uri_scheme = match env::var("IS_TLS") {
-        Ok(_) => "rediss",
-        Err(_) => "redis",
-    };
-
-    let redis_conn_url = format!(
-        "{}://{}:{}/{}",
-        uri_scheme, redis_host_name, redis_port, redis_db
-    );
-    //println!("{}", redis_conn_url);
-
-    redis::Client::open(redis_conn_url).expect("Failed to connect to Redis")
 }

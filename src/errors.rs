@@ -4,5 +4,6 @@ use std::io;
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum Error {
+    ConfigurationSecretMissing,
     NotImplementedError,
 }
