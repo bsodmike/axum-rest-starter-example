@@ -2,8 +2,9 @@
 use axum::{
     async_trait,
     extract::{Extension, Form, Path},
-    http::StatusCode,
-    response::{Html, IntoResponse, Redirect, Response},
+    handler::Handler,
+    http::{Uri, Method, StatusCode, Request, Response, Result},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
@@ -73,6 +74,9 @@ async fn main() {
         .route("/", get(show_form).post(accept_form))
         .layer(middleware_stack);
 
+    // add a fallback service for handling routes to unknown paths
+    let app = app.fallback(handler_404.into_service());
+
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::debug!("listening on {}", addr);
@@ -139,4 +143,10 @@ async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisRe
     println!("->> my_key: {}\n", result);
 
     Ok(())
+}
+
+async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, format!("Nothing to see at {} {}", method, uri))
+
+
 }
