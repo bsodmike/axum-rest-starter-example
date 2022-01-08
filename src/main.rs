@@ -146,7 +146,7 @@ async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisRe
 }
 
 async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, format!("Nothing to see at {} {}", method, uri))
+    (StatusCode::NOT_FOUND)
 
 
 }
