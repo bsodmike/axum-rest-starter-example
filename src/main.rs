@@ -60,16 +60,16 @@ async fn main() {
     }
     tracing_subscriber::fmt::init();
 
+    let middleware_stack = ServiceBuilder::new()
+        .layer(TraceLayer::new_for_http())
+        .layer(AddExtensionLayer::new(AppState {
+            redis_client: crate::wrappers::redis_wrapper::connect().await,
+        }));
+
     // build our application with some routes
     let app = Router::new()
         .route("/", get(show_form).post(accept_form))
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(AddExtensionLayer::new(AppState {
-                    redis_client: crate::wrappers::redis_wrapper::connect().await,
-                })),
-        );
+        .layer(middleware_stack);
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
