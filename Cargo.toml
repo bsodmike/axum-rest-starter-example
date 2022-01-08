@@ -10,7 +10,6 @@ publish = false
 anyhow = "1.0"
 tokio = { version = "1", features = ["full"] }
 axum = "0.4"
-flate2 = "1.0"
 redis = { version = "0.21", features = ["aio", "tokio-comp"] }
 tracing = "0.1"
 tracing-subscriber = { version="0.3", features = ["env-filter"] }
