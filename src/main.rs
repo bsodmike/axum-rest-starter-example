@@ -4,13 +4,44 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post, Router},
-    AddExtensionLayer, Json, Router,
+    AddExtensionLayer, Json,
 };
+use config::*;
+use glob::glob;
+use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
 use std::net::SocketAddr;
+
+pub mod configure;
+pub mod errors;
+
+pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
+    let mut glob_path = "conf/development/*";
+    let mut settings = Config::default();
+
+    let run_mode = match std::env::var("RUST_ENV") {
+        Ok(value) => value,
+        Err(_) => String::new(),
+    };
+
+    if run_mode.eq("production") {
+        glob_path = "conf/production/*";
+        println!("RUST_ENV={}", run_mode);
+    }
+
+    settings
+        .merge(
+            glob(glob_path)
+                .unwrap()
+                .map(|path| File::from(path.unwrap()))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    settings
+});
 
 #[tokio::main]
 async fn main() {
@@ -19,6 +50,10 @@ async fn main() {
         std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
     }
     tracing_subscriber::fmt::init();
+
+    let redis_host_name: String =
+        configure::fetch::<String>(String::from("redis_host_name")).unwrap();
+    println!("->> redis_host_name: {}\n", redis_host_name);
 
     // build our application with some routes
     let app = Router::new().route("/", get(show_form).post(accept_form));

@@ -1,1 +1,4 @@
 /target
+/log
+/conf/development
+.vscode
