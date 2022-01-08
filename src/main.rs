@@ -22,6 +22,8 @@ pub mod configure;
 pub mod errors;
 pub mod wrappers;
 
+use crate::errors::{ApiResult, Error};
+
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     let mut glob_path = "conf/development/*";
     let mut settings = Config::default();
@@ -111,13 +113,18 @@ struct Input {
     email: String,
 }
 
-async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) {
+async fn accept_form(
+    Form(input): Form<Input>,
+    state: Extension<AppState>,
+) -> ApiResult<StatusCode> {
     dbg!(&input);
 
     match save_form(&input, &state).await {
         Ok(_) => (),
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
+
+    Ok(StatusCode::OK)
 }
 
 async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
