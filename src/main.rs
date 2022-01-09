@@ -95,7 +95,6 @@ async fn main() {
     let app = Router::new()
         .route("/", get(show_form).post(accept_form))
         .route("/foo", get(foo_handler))
-        //.route_layer(extractor_middleware::<SessionUUID>())
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
