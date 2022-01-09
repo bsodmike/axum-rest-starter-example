@@ -134,8 +134,6 @@ async fn session_uuid_middleware(
 
     // return the new created session cookie for client
     if session_cookie.is_none() {
-        //return Err((StatusCode::BAD_REQUEST, "Session cookie does not exist!"));
-
         let user_id = UserId::new();
         let mut session = Session::new();
         session.insert("user_id", user_id).unwrap();
