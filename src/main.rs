@@ -1,9 +1,10 @@
 #![allow(unused_imports)]
 use axum::{
     async_trait,
+    body::Body,
     extract::{Extension, Form, Path},
     handler::Handler,
-    http::{Uri, Method, StatusCode, Request, Response, Result},
+    http::{header::LOCATION, Method, Request, Response, Result, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
@@ -117,10 +118,7 @@ struct Input {
     email: String,
 }
 
-async fn accept_form(
-    Form(input): Form<Input>,
-    state: Extension<AppState>,
-) -> Redirect {
+async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) -> Response<Body> {
     dbg!(&input);
 
     match save_form(&input, &state).await {
@@ -128,7 +126,16 @@ async fn accept_form(
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
 
-    Redirect::to("/".parse().unwrap())
+    //Redirect::to("/".parse().unwrap())
+    let mut response = Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .body(Body::empty())
+        .unwrap();
+
+    let headers = response.headers_mut();
+    headers.insert(LOCATION, "/".parse().unwrap());
+
+    response
 }
 
 async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
@@ -146,7 +153,5 @@ async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisRe
 }
 
 async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND)
-
-
+    StatusCode::NOT_FOUND
 }
