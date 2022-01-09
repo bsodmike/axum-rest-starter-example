@@ -1,24 +1,30 @@
 #![allow(unused_imports)]
 use axum::{
     async_trait,
-    body::Body,
-    extract::{Extension, Form, Path},
+    body::{Body, BoxBody, Bytes},
+    extract::{Extension, Form, FromRequest, Path, RequestParts, TypedHeader},
     handler::Handler,
-    http::{header::LOCATION, Method, Request, Response, Result, StatusCode, Uri},
-    response::{Html, IntoResponse, Redirect},
+    http::{header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
+use axum_extra::middleware::{self, Next};
 use config::*;
 use glob::glob;
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
-use tower::{limit::ConcurrencyLimitLayer, ServiceBuilder};
+use tower::{
+    filter::AsyncFilterLayer, limit::ConcurrencyLimitLayer, util::AndThenLayer, BoxError,
+    ServiceBuilder,
+};
 use tower_http::trace::TraceLayer;
+use uuid::Uuid;
 
 pub mod configure;
 pub mod errors;
@@ -68,7 +74,8 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(AppState {
             redis_client: crate::wrappers::redis_wrapper::connect().await,
-        }));
+        }))
+        .layer(axum_extra::middleware::from_fn(session_uuid_handler));
 
     // build our application with some routes
     let app = Router::new()
@@ -87,6 +94,81 @@ async fn main() {
         .unwrap();
 }
 
+// Session management
+async fn session_uuid_handler(
+    req: Request<Body>,
+    next: Next<Body>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let (parts, body) = req.into_parts();
+
+    println!("Request body:");
+    dbg!(&body);
+    let bytes = buffer_and_print("request", body).await?;
+
+    println!("Request parts:");
+    dbg!(&parts);
+    let req = Request::from_parts(parts, Body::from(bytes));
+
+    let mut res = next.run(req).await;
+
+    let headers = res.headers_mut();
+    dbg!(headers);
+
+    let (parts, body) = res.into_parts();
+
+    println!("Response body:");
+    dbg!(&body);
+    let bytes = buffer_and_print("response", body).await?;
+
+    println!("Response parts:");
+    dbg!(&parts);
+    let res = Response::from_parts(parts, Body::from(bytes));
+
+    Ok(res)
+}
+
+async fn buffer_and_print<B>(direction: &str, body: B) -> Result<Bytes, (StatusCode, String)>
+where
+    B: axum::body::HttpBody<Data = Bytes>,
+    B::Error: std::fmt::Display,
+{
+    let bytes = match hyper::body::to_bytes(body).await {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("failed to read {} body: {}", direction, err),
+            ));
+        }
+    };
+
+    if let Ok(body) = std::str::from_utf8(&bytes) {
+        tracing::debug!("{} body = {:?}", direction, body);
+    }
+
+    Ok(bytes)
+}
+
+struct FreshUserId {
+    pub user_id: UserId,
+    pub cookie: HeaderValue,
+}
+
+enum UserIdFromSession {
+    FoundUserId(UserId),
+    CreatedFreshUserId(FreshUserId),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+struct UserId(Uuid);
+
+impl UserId {
+    fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+// Frontend logic
 async fn show_form() -> Html<&'static str> {
     Html(
         r#"
