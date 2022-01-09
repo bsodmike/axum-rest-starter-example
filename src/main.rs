@@ -71,32 +71,6 @@ struct AppState {
 
 const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
 
-//struct SessionUUID;
-//
-//#[async_trait]
-//impl<B> FromRequest<B> for SessionUUID
-//where
-//    B: Send,
-//{
-//    type Rejection = (StatusCode, &'static str);
-//
-//    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-//        //let auth_header = req
-//        //    .headers()
-//        //    .and_then(|headers| headers.get(http::header::AUTHORIZATION))
-//        //    .and_then(|value| value.to_str().ok());
-//
-//        //if let Some(value) = auth_header {
-//        //    if value == "secret" {
-//        //        return Ok(Self);
-//        //    }
-//        //}
-//
-//
-//        //Ok(Self)
-//    }
-//}
-
 #[tokio::main]
 async fn main() {
     // Set the RUST_LOG, if it hasn't been explicitly defined
@@ -142,7 +116,7 @@ async fn foo_handler() {}
 async fn session_uuid_middleware(
     req: Request<Body>,
     next: Next<Body>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
+) -> Result<impl IntoResponse, StatusCode> {
     let store = req
         .extensions()
         .get::<MemoryStore>()
@@ -185,39 +159,33 @@ async fn session_uuid_middleware(
     }
 
     tracing::debug!(
-        "UserIdFromSession: got session cookie from user agent, {:?}={:?}",
+        "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
         AXUM_SESSION_COOKIE_NAME,
         &session_cookie.unwrap()
     );
 
     // continue to decode the session cookie
-    let user_id = if let Some(session) = store
+    let _user_id = if let Some(session) = store
         .load_session(session_cookie.unwrap().to_owned())
         .await
         .unwrap()
     {
         if let Some(user_id) = session.get::<UserId>("user_id") {
             tracing::debug!(
-                "UserIdFromSession: session decoded success, user_id={:?}",
+                "session_uuid_middleware: session decoded success, user_id={:?}",
                 user_id
             );
             user_id
         } else {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "No `user_id` found in session".to_string(),
-            ));
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     } else {
         tracing::debug!(
-            "UserIdFromSession: err session not exists in store, {}={}",
+            "session_uuid_middleware: Err session does not exist in store, {}={}",
             AXUM_SESSION_COOKIE_NAME,
             session_cookie.unwrap()
         );
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "No session found for cookie".to_string(),
-        ));
+        return Err(StatusCode::BAD_REQUEST);
     };
 
     let res = next.run(req).await;
@@ -277,37 +245,6 @@ where
     }
 
     Ok(bytes)
-}
-
-async fn handler(user_id: UserIdFromSession) -> impl IntoResponse {
-    let (headers, user_id, create_cookie) = match user_id {
-        UserIdFromSession::FoundUserId(user_id) => (HeaderMap::new(), user_id, false),
-        UserIdFromSession::CreatedFreshUserId(new_user) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(http::header::SET_COOKIE, new_user.cookie);
-            (headers, new_user.user_id, true)
-        }
-    };
-
-    tracing::debug!("handler: user_id={:?} send_headers={:?}", user_id, headers);
-
-    (
-        headers,
-        format!(
-            "user_id={:?} session_cookie_name={} create_new_session_cookie={}",
-            user_id, AXUM_SESSION_COOKIE_NAME, create_cookie
-        ),
-    )
-}
-
-struct FreshUserId {
-    pub user_id: UserId,
-    pub cookie: HeaderValue,
-}
-
-enum UserIdFromSession {
-    FoundUserId(UserId),
-    CreatedFreshUserId(FreshUserId),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
