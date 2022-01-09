@@ -3,7 +3,9 @@ use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, Bytes},
-    extract::{Extension, Form, FromRequest, Path, RequestParts, TypedHeader},
+    extract::{
+        extractor_middleware, Extension, Form, FromRequest, Path, RequestParts, TypedHeader,
+    },
     handler::Handler,
     headers::Cookie,
     http::{self, header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
@@ -66,6 +68,108 @@ struct AppState {
 
 const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
 
+struct SessionUUID;
+
+#[async_trait]
+impl<B> FromRequest<B> for SessionUUID
+where
+    B: Send,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        //let auth_header = req
+        //    .headers()
+        //    .and_then(|headers| headers.get(http::header::AUTHORIZATION))
+        //    .and_then(|value| value.to_str().ok());
+
+        //if let Some(value) = auth_header {
+        //    if value == "secret" {
+        //        return Ok(Self);
+        //    }
+        //}
+
+        let Extension(store) = Extension::<MemoryStore>::from_request(req)
+            .await
+            .expect("`MemoryStore` extension missing");
+
+        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
+            .await
+            .unwrap();
+
+        let session_cookie = cookie
+            .as_ref()
+            .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
+
+        // return the new created session cookie for client
+        if session_cookie.is_none() {
+            //return Err((StatusCode::BAD_REQUEST, "Session cookie does not exist!"));
+
+            let user_id = UserId::new();
+            let mut session = Session::new();
+            session.insert("user_id", user_id).unwrap();
+            let cookie = store.store_session(session).await.unwrap().unwrap();
+
+            tracing::debug!(
+                "Created UUID {:?} for user cookie, {:?}={:?}",
+                user_id,
+                AXUM_SESSION_COOKIE_NAME,
+                cookie
+            );
+
+            // create cookie
+            //UserIdFromSession::CreatedFreshUserId(FreshUserId {
+            //    user_id,
+            //    cookie: HeaderValue::from_str(
+            //        format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str(),
+            //    )
+            //    .unwrap(),
+            //});
+
+            // FIXME need to be able to add cookie to the headers in the response
+            // Consider using this https://docs.rs/tower-http/latest/tower_http/auth/require_authorization/index.html
+            // Use `AuthorizeRequest` to ensure user UUID is checked on every request
+
+            return Ok(Self);
+        }
+
+        tracing::debug!(
+            "UserIdFromSession: got session cookie from user agent, {}={}",
+            AXUM_SESSION_COOKIE_NAME,
+            session_cookie.unwrap()
+        );
+
+        // continue to decode the session cookie
+        let user_id = if let Some(session) = store
+            .load_session(session_cookie.unwrap().to_owned())
+            .await
+            .unwrap()
+        {
+            if let Some(user_id) = session.get::<UserId>("user_id") {
+                tracing::debug!(
+                    "UserIdFromSession: session decoded success, user_id={:?}",
+                    user_id
+                );
+                user_id
+            } else {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "No `user_id` found in session",
+                ));
+            }
+        } else {
+            tracing::debug!(
+                "UserIdFromSession: err session not exists in store, {}={}",
+                AXUM_SESSION_COOKIE_NAME,
+                session_cookie.unwrap()
+            );
+            return Err((StatusCode::BAD_REQUEST, "No session found for cookie"));
+        };
+
+        Ok(Self)
+    }
+}
+
 #[tokio::main]
 async fn main() {
     // Set the RUST_LOG, if it hasn't been explicitly defined
@@ -82,13 +186,14 @@ async fn main() {
         .layer(AddExtensionLayer::new(AppState {
             redis_client: crate::wrappers::redis_wrapper::connect().await,
         }))
-        .layer(AddExtensionLayer::new(store))
-        .layer(axum_extra::middleware::from_fn(session_uuid_middleware));
+        .layer(middleware::from_fn(print_request_info_middleware))
+        .layer(AddExtensionLayer::new(store));
 
     // build our application with some routes
     let app = Router::new()
         .route("/", get(show_form).post(accept_form))
-        .route("/foo", get(handler))
+        .route("/foo", get(foo_handler))
+        .route_layer(extractor_middleware::<SessionUUID>())
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
@@ -103,8 +208,10 @@ async fn main() {
         .unwrap();
 }
 
+async fn foo_handler() {}
+
 // Session management
-async fn session_uuid_middleware(
+async fn print_request_info_middleware(
     req: Request<Body>,
     next: Next<Body>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -187,87 +294,6 @@ struct FreshUserId {
 enum UserIdFromSession {
     FoundUserId(UserId),
     CreatedFreshUserId(FreshUserId),
-}
-
-#[async_trait]
-impl<B> FromRequest<B> for UserIdFromSession
-where
-    B: Send,
-{
-    type Rejection = (StatusCode, &'static str);
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<MemoryStore>::from_request(req)
-            .await
-            .expect("`MemoryStore` extension missing");
-
-        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
-            .await
-            .unwrap();
-
-        let session_cookie = cookie
-            .as_ref()
-            .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
-
-        // return the new created session cookie for client
-        if session_cookie.is_none() {
-            //return Err((StatusCode::BAD_REQUEST, "Session cookie does not exist!"));
-
-            let user_id = UserId::new();
-            let mut session = Session::new();
-            session.insert("user_id", user_id).unwrap();
-            let cookie = store.store_session(session).await.unwrap().unwrap();
-
-            tracing::debug!(
-                "Created UUID {:?} for user cookie, {:?}={:?}",
-                user_id,
-                AXUM_SESSION_COOKIE_NAME,
-                cookie
-            );
-            return Ok(Self::CreatedFreshUserId(FreshUserId {
-                user_id,
-                cookie: HeaderValue::from_str(
-                    format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str(),
-                )
-                .unwrap(),
-            }));
-        }
-
-        tracing::debug!(
-            "UserIdFromSession: got session cookie from user agent, {}={}",
-            AXUM_SESSION_COOKIE_NAME,
-            session_cookie.unwrap()
-        );
-
-        // continue to decode the session cookie
-        let user_id = if let Some(session) = store
-            .load_session(session_cookie.unwrap().to_owned())
-            .await
-            .unwrap()
-        {
-            if let Some(user_id) = session.get::<UserId>("user_id") {
-                tracing::debug!(
-                    "UserIdFromSession: session decoded success, user_id={:?}",
-                    user_id
-                );
-                user_id
-            } else {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "No `user_id` found in session",
-                ));
-            }
-        } else {
-            tracing::debug!(
-                "UserIdFromSession: err session not exists in store, {}={}",
-                AXUM_SESSION_COOKIE_NAME,
-                session_cookie.unwrap()
-            );
-            return Err((StatusCode::BAD_REQUEST, "No session found for cookie"));
-        };
-
-        Ok(Self::FoundUserId(user_id))
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
