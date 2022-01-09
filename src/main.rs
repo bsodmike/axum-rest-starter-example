@@ -1,10 +1,12 @@
 #![allow(unused_imports)]
+use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, Bytes},
     extract::{Extension, Form, FromRequest, Path, RequestParts, TypedHeader},
     handler::Handler,
-    http::{header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
+    headers::Cookie,
+    http::{self, header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
@@ -62,6 +64,8 @@ struct AppState {
     redis_client: redis::Client,
 }
 
+const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
+
 #[tokio::main]
 async fn main() {
     // Set the RUST_LOG, if it hasn't been explicitly defined
@@ -70,16 +74,21 @@ async fn main() {
     }
     tracing_subscriber::fmt::init();
 
+    // `MemoryStore` just used as an example. Don't use this in production.
+    let store = MemoryStore::new();
+
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(AppState {
             redis_client: crate::wrappers::redis_wrapper::connect().await,
         }))
-        .layer(axum_extra::middleware::from_fn(session_uuid_handler));
+        .layer(AddExtensionLayer::new(store))
+        .layer(axum_extra::middleware::from_fn(session_uuid_middleware));
 
     // build our application with some routes
     let app = Router::new()
         .route("/", get(show_form).post(accept_form))
+        .route("/foo", get(handler))
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
@@ -95,7 +104,7 @@ async fn main() {
 }
 
 // Session management
-async fn session_uuid_handler(
+async fn session_uuid_middleware(
     req: Request<Body>,
     next: Next<Body>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -149,6 +158,27 @@ where
     Ok(bytes)
 }
 
+async fn handler(user_id: UserIdFromSession) -> impl IntoResponse {
+    let (headers, user_id, create_cookie) = match user_id {
+        UserIdFromSession::FoundUserId(user_id) => (HeaderMap::new(), user_id, false),
+        UserIdFromSession::CreatedFreshUserId(new_user) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(http::header::SET_COOKIE, new_user.cookie);
+            (headers, new_user.user_id, true)
+        }
+    };
+
+    tracing::debug!("handler: user_id={:?} send_headers={:?}", user_id, headers);
+
+    (
+        headers,
+        format!(
+            "user_id={:?} session_cookie_name={} create_new_session_cookie={}",
+            user_id, AXUM_SESSION_COOKIE_NAME, create_cookie
+        ),
+    )
+}
+
 struct FreshUserId {
     pub user_id: UserId,
     pub cookie: HeaderValue,
@@ -157,6 +187,87 @@ struct FreshUserId {
 enum UserIdFromSession {
     FoundUserId(UserId),
     CreatedFreshUserId(FreshUserId),
+}
+
+#[async_trait]
+impl<B> FromRequest<B> for UserIdFromSession
+where
+    B: Send,
+{
+    type Rejection = (StatusCode, &'static str);
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Extension(store) = Extension::<MemoryStore>::from_request(req)
+            .await
+            .expect("`MemoryStore` extension missing");
+
+        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
+            .await
+            .unwrap();
+
+        let session_cookie = cookie
+            .as_ref()
+            .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
+
+        // return the new created session cookie for client
+        if session_cookie.is_none() {
+            //return Err((StatusCode::BAD_REQUEST, "Session cookie does not exist!"));
+
+            let user_id = UserId::new();
+            let mut session = Session::new();
+            session.insert("user_id", user_id).unwrap();
+            let cookie = store.store_session(session).await.unwrap().unwrap();
+
+            tracing::debug!(
+                "Created UUID {:?} for user cookie, {:?}={:?}",
+                user_id,
+                AXUM_SESSION_COOKIE_NAME,
+                cookie
+            );
+            return Ok(Self::CreatedFreshUserId(FreshUserId {
+                user_id,
+                cookie: HeaderValue::from_str(
+                    format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str(),
+                )
+                .unwrap(),
+            }));
+        }
+
+        tracing::debug!(
+            "UserIdFromSession: got session cookie from user agent, {}={}",
+            AXUM_SESSION_COOKIE_NAME,
+            session_cookie.unwrap()
+        );
+
+        // continue to decode the session cookie
+        let user_id = if let Some(session) = store
+            .load_session(session_cookie.unwrap().to_owned())
+            .await
+            .unwrap()
+        {
+            if let Some(user_id) = session.get::<UserId>("user_id") {
+                tracing::debug!(
+                    "UserIdFromSession: session decoded success, user_id={:?}",
+                    user_id
+                );
+                user_id
+            } else {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "No `user_id` found in session",
+                ));
+            }
+        } else {
+            tracing::debug!(
+                "UserIdFromSession: err session not exists in store, {}={}",
+                AXUM_SESSION_COOKIE_NAME,
+                session_cookie.unwrap()
+            );
+            return Err((StatusCode::BAD_REQUEST, "No session found for cookie"));
+        };
+
+        Ok(Self::FoundUserId(user_id))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
