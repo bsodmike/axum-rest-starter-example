@@ -92,32 +92,6 @@ const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
 //        //    }
 //        //}
 //
-//        // continue to decode the session cookie
-//        //let user_id = if let Some(session) = store
-//        //    .load_session(session_cookie.unwrap().to_owned())
-//        //    .await
-//        //    .unwrap()
-//        //{
-//        //    if let Some(user_id) = session.get::<UserId>("user_id") {
-//        //        tracing::debug!(
-//        //            "UserIdFromSession: session decoded success, user_id={:?}",
-//        //            user_id
-//        //        );
-//        //        user_id
-//        //    } else {
-//        //        return Err((
-//        //            StatusCode::INTERNAL_SERVER_ERROR,
-//        //            "No `user_id` found in session",
-//        //        ));
-//        //    }
-//        //} else {
-//        //    tracing::debug!(
-//        //        "UserIdFromSession: err session not exists in store, {}={}",
-//        //        AXUM_SESSION_COOKIE_NAME,
-//        //        session_cookie.unwrap()
-//        //    );
-//        //    return Err((StatusCode::BAD_REQUEST, "No session found for cookie"));
-//        //};
 //
 //        //Ok(Self)
 //    }
@@ -181,11 +155,6 @@ async fn session_uuid_middleware(
         .as_ref()
         .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
 
-    //let mut map = http::HeaderMap::new();
-    //map.insert(
-    //    http::header::COOKIE,
-    //    HeaderValue::from_str(cookie.to_str().unwrap()).unwrap(),
-    //);
     dbg!(&cookie);
     dbg!(&session_cookie);
 
@@ -218,10 +187,41 @@ async fn session_uuid_middleware(
     tracing::debug!(
         "UserIdFromSession: got session cookie from user agent, {:?}={:?}",
         AXUM_SESSION_COOKIE_NAME,
-        session_cookie.unwrap()
+        &session_cookie.unwrap()
     );
 
-    let mut res = next.run(req).await;
+    // continue to decode the session cookie
+    let user_id = if let Some(session) = store
+        .load_session(session_cookie.unwrap().to_owned())
+        .await
+        .unwrap()
+    {
+        if let Some(user_id) = session.get::<UserId>("user_id") {
+            tracing::debug!(
+                "UserIdFromSession: session decoded success, user_id={:?}",
+                user_id
+            );
+            user_id
+        } else {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "No `user_id` found in session".to_string(),
+            ));
+        }
+    } else {
+        tracing::debug!(
+            "UserIdFromSession: err session not exists in store, {}={}",
+            AXUM_SESSION_COOKIE_NAME,
+            session_cookie.unwrap()
+        );
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "No session found for cookie".to_string(),
+        ));
+    };
+
+    let res = next.run(req).await;
+
     Ok(res)
 }
 
