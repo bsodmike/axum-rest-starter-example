@@ -118,7 +118,7 @@ struct Input {
     email: String,
 }
 
-async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) -> Response<Body> {
+async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) -> Redirect {
     dbg!(&input);
 
     match save_form(&input, &state).await {
@@ -126,16 +126,7 @@ async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) -> Re
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
 
-    //Redirect::to("/".parse().unwrap())
-    let mut response = Response::builder()
-        .status(StatusCode::SEE_OTHER)
-        .body(Body::empty())
-        .unwrap();
-
-    let headers = response.headers_mut();
-    headers.insert(LOCATION, "/".parse().unwrap());
-
-    response
+    Redirect::to("/".parse().unwrap())
 }
 
 async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
