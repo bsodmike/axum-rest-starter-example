@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
 use async_session::{MemoryStore, Session, SessionStore as _};
+use axum::headers::HeaderMapExt;
 use axum::{
     async_trait,
     body::{Body, BoxBody, Bytes},
@@ -174,7 +175,19 @@ async fn session_uuid_middleware(
         .expect("`MemoryStore` extension missing");
 
     let headers = req.headers();
-    let session_cookie = headers.get(AXUM_SESSION_COOKIE_NAME);
+    let cookie = headers.typed_try_get::<Cookie>().unwrap();
+
+    let session_cookie = cookie
+        .as_ref()
+        .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
+
+    //let mut map = http::HeaderMap::new();
+    //map.insert(
+    //    http::header::COOKIE,
+    //    HeaderValue::from_str(cookie.to_str().unwrap()).unwrap(),
+    //);
+    dbg!(&cookie);
+    dbg!(&session_cookie);
 
     // return the new created session cookie for client
     if session_cookie.is_none() {
