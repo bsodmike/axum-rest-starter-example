@@ -173,21 +173,7 @@ async fn session_uuid_middleware(
         .get::<MemoryStore>()
         .expect("`MemoryStore` extension missing");
 
-    //let headers = if let Some(headers) = req.headers() {
-    //    headers
-    //} else {
-    //    return Err((
-    //        StatusCode::INTERNAL_SERVER_ERROR,
-    //        "Unable to fetch header!".to_string(),
-    //    ));
-    //};
     let headers = req.headers();
-    dbg!(headers);
-    let cookie = headers.get(http::header::COOKIE);
-
-    //let session_cookie = cookie
-    //    .as_ref()
-    //    .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
     let session_cookie = headers.get(AXUM_SESSION_COOKIE_NAME);
 
     // return the new created session cookie for client
