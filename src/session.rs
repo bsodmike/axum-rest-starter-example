@@ -23,9 +23,7 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
     let session_cookie = cookie
         .as_ref()
         .and_then(|cookie| cookie.get(AXUM_SESSION_COOKIE_NAME));
-
-    dbg!(&cookie);
-    dbg!(&session_cookie);
+    tracing::debug!("Session cookie: {:?}", &session_cookie);
 
     // return the new created session cookie for client
     if session_cookie.is_none() {
@@ -88,13 +86,14 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
         }
     } else {
         tracing::debug!(
-            "session_uuid_middleware: Err session does not exist in store, {}={}",
+            "session_uuid_middleware: Error!! Session does not exist in store, {}={}",
             AXUM_SESSION_COOKIE_NAME,
             session_cookie.unwrap()
         );
         return Err(StatusCode::BAD_REQUEST);
     };
 
+    // TODO need to use the User UUID
     let res = next.run(req).await;
 
     Ok(res)
