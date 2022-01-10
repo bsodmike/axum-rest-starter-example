@@ -12,36 +12,34 @@ pub async fn connect() -> redis::Client {
     let redis_port: String =
         configure::fetch::<String>(String::from("redis_port")).unwrap_or_default();
 
-    match redis_host_name.as_str() {
-        "" => panic!(
+    if redis_host_name.as_str() == "" {
+        panic!(
             "Redis hostname is missing {:?}",
             Error::ConfigurationSecretMissing
-        ),
-        _ => (),
+        )
     };
 
-    match redis_password.as_str() {
-        "" => panic!(
+    if redis_password.as_str() == "" {
+        panic!(
             "Redis password is missing {:?}",
             Error::ConfigurationSecretMissing
-        ),
-        _ => (),
+        )
     };
 
-    match redis_db.as_str() {
-        "" => panic!(
-            "Redis database is missing {:?}",
+    if redis_db.as_str() == "" {
+        panic!(
+            "Redis db is missing {:?}",
             Error::ConfigurationSecretMissing
-        ),
-        _ => (),
+        )
     };
-    match redis_port.as_str() {
-        "" => panic!(
+
+    if redis_port.as_str() == "" {
+        panic!(
             "Redis port is missing {:?}",
             Error::ConfigurationSecretMissing
-        ),
-        _ => (),
+        )
     };
+
     //println!("\n->> redis_host_name: {}", redis_host_name);
     //println!("->> redis_password: {}", redis_password);
     //println!("->> redis_db: {}", redis_db);
