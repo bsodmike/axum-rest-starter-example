@@ -9,7 +9,7 @@ use axum_extra::middleware::{self, Next};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
+pub const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
 
 pub async fn session_uuid_middleware(
     req: Request<Body>,
@@ -90,7 +90,7 @@ pub async fn session_uuid_middleware(
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-struct UserId(Uuid);
+pub struct UserId(pub Uuid);
 
 impl UserId {
     fn new() -> Self {

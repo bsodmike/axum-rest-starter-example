@@ -1,9 +1,10 @@
 #![allow(unused_imports)]
+use askama::Template;
 use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
 use axum::{
     async_trait,
-    body::{Body, BoxBody, Bytes},
+    body::{self, Body, BoxBody, Bytes, Full},
     extract::{
         extractor_middleware, rejection::TypedHeaderRejection,
         rejection::TypedHeaderRejectionReason, Extension, Form, FromRequest, Path, RequestParts,
@@ -23,6 +24,7 @@ use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use session::session_uuid_middleware;
 use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
@@ -97,7 +99,7 @@ async fn main() {
     // build our application with some routes
     let app = Router::new()
         .route("/", get(show_form).post(accept_form))
-        .route("/foo", get(foo_handler))
+        .route("/privacy-policy", get(privacy_policy_handler))
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
@@ -112,33 +114,99 @@ async fn main() {
         .unwrap();
 }
 
-async fn foo_handler() {}
+async fn privacy_policy_handler() {}
 
-// Session management
+#[derive(Template)]
+#[template(path = "index.html")]
+struct IndexTemplate {
+    uuid: uuid::Uuid,
+}
+
+struct HtmlTemplate<T>(T);
+
+impl<T> IntoResponse for HtmlTemplate<T>
+where
+    T: Template,
+{
+    fn into_response(self) -> Response {
+        match self.0.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(err) => Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(body::boxed(Full::from(format!(
+                    "Failed to render template. Error: {}",
+                    err
+                ))))
+                .unwrap(),
+        }
+    }
+}
 
 // Frontend logic
-async fn show_form() -> Html<&'static str> {
-    Html(
-        r#"
-        <!doctype html>
-        <html>
-            <head></head>
-            <body>
-                <form action="/" method="post">
-                    <label for="name">
-                        Enter your name:
-                        <input type="text" name="name">
-                    </label>
-                    <label>
-                        Enter your email:
-                        <input type="text" name="email">
-                    </label>
-                    <input type="submit" value="Subscribe!">
-                </form>
-            </body>
-        </html>
-        "#,
-    )
+async fn show_form(session_user: UserFromSession) -> impl IntoResponse {
+    let uuid = session_user.uuid;
+    let template = IndexTemplate { uuid };
+    HtmlTemplate(template)
+}
+
+struct UserFromSession {
+    uuid: uuid::Uuid,
+}
+
+#[async_trait]
+impl<B> FromRequest<B> for UserFromSession
+where
+    B: Send, // required by `async_trait`
+{
+    type Rejection = http::StatusCode;
+
+    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
+        let Extension(store) = Extension::<MemoryStore>::from_request(req)
+            .await
+            .expect("`MemoryStore` extension missing");
+
+        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
+            .await
+            .unwrap();
+
+        tracing::debug!("cookie: {:?}", cookie);
+
+        let session_cookie = cookie
+            .as_ref()
+            .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
+
+        //tracing::debug!(
+        //    "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
+        //    crate::session::AXUM_SESSION_COOKIE_NAME,
+        //    &session_cookie.unwrap()
+        //);
+
+        // continue to decode the session cookie
+        let user_id = if let Some(session) = store
+            .load_session(session_cookie.unwrap().to_owned())
+            .await
+            .unwrap()
+        {
+            if let Some(user_id) = session.get::<crate::session::UserId>("user_id") {
+                tracing::debug!(
+                    "session_uuid_middleware: session decoded success, user_id={:?}",
+                    user_id
+                );
+                user_id
+            } else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        } else {
+            tracing::debug!(
+                "session_uuid_middleware: Err session does not exist in store, {}={}",
+                crate::session::AXUM_SESSION_COOKIE_NAME,
+                session_cookie.unwrap()
+            );
+            return Err(StatusCode::BAD_REQUEST);
+        };
+
+        Ok(Self { uuid: user_id.0 })
+    }
 }
 
 #[derive(Deserialize, Debug)]

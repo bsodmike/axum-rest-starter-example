@@ -24,4 +24,4 @@ tower-http = { version = "0.2.0", features = ["trace"] }
 hyper = { version = "0.14", features = ["full"] }
 async-session = "3.0.0"
 uuid = { version = "0.8", features = ["v4", "serde"] }
-
+askama = "0.10"
