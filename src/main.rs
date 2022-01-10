@@ -175,11 +175,11 @@ where
             .as_ref()
             .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
 
-        //tracing::debug!(
-        //    "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
-        //    crate::session::AXUM_SESSION_COOKIE_NAME,
-        //    &session_cookie.unwrap()
-        //);
+        tracing::debug!(
+            "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
+            crate::session::AXUM_SESSION_COOKIE_NAME,
+            &session_cookie.unwrap()
+        );
 
         // continue to decode the session cookie
         let user_id = if let Some(session) = store

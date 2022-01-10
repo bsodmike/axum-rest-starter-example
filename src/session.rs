@@ -1,9 +1,9 @@
 use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::{
-    body::Body,
+    body::{Body, BoxBody, HttpBody},
     headers::{Cookie, HeaderMapExt},
     http::{self, HeaderValue, Request, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
 use serde::{Deserialize, Serialize};
@@ -11,10 +11,7 @@ use uuid::Uuid;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
 
-pub async fn session_uuid_middleware(
-    req: Request<Body>,
-    next: Next<Body>,
-) -> Result<impl IntoResponse, StatusCode> {
+pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
     let store = req
         .extensions()
         .get::<MemoryStore>()
@@ -44,13 +41,27 @@ pub async fn session_uuid_middleware(
             cookie
         );
 
-        let mut res = next.run(req).await;
-        let res_headers = res.headers_mut();
+        // Return response only, without advancing through the middleware stack; we pass the cookie
+        // back to the client and redirect to the root path. This should only happen once per every
+        // request that does not include a valid session cookie.
+        let _body = axum::body::Body::empty().boxed_unsync();
+        let mut res = Response::builder()
+            .status(StatusCode::SEE_OTHER)
+            .body(_body)
+            .unwrap();
+
         let cookie_value =
             HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str())
                 .unwrap();
-        res_headers.insert(http::header::SET_COOKIE, cookie_value);
+        let headers = res.headers_mut();
+        headers.insert(http::header::LOCATION, "/".parse().unwrap());
+        headers.insert(http::header::SET_COOKIE, cookie_value);
 
+        // It is also possible to call `let res = res.map(axum::body::boxed)`
+        // to correct the response type.
+        let res = res.into_response();
+
+        tracing::debug!("Session UUID Creation: Done. Response: {:?}", res);
         return Ok(res);
     }
 
