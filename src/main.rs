@@ -16,7 +16,7 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
-use axum_extra::middleware::{self, Next};
+use axum_extra::middleware::{self as axum_middleware, Next};
 use config::*;
 use glob::glob;
 use once_cell::sync::Lazy;
@@ -34,6 +34,7 @@ use tower_http::trace::TraceLayer;
 
 pub mod configure;
 pub mod errors;
+pub mod middleware;
 pub mod session;
 pub mod wrappers;
 
@@ -85,9 +86,13 @@ async fn main() {
         .layer(AddExtensionLayer::new(AppState {
             redis_client: crate::wrappers::redis_wrapper::connect().await,
         }))
-        .layer(middleware::from_fn(print_request_info_middleware))
+        .layer(axum_extra::middleware::from_fn(
+            crate::middleware::debugging::print_request_info_middleware,
+        ))
         .layer(AddExtensionLayer::new(store))
-        .layer(middleware::from_fn(session::session_uuid_middleware));
+        .layer(axum_extra::middleware::from_fn(
+            session::session_uuid_middleware,
+        ));
 
     // build our application with some routes
     let app = Router::new()
@@ -110,60 +115,6 @@ async fn main() {
 async fn foo_handler() {}
 
 // Session management
-
-async fn print_request_info_middleware(
-    req: Request<Body>,
-    next: Next<Body>,
-) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let (parts, body) = req.into_parts();
-
-    println!("Request body:");
-    dbg!(&body);
-    let bytes = buffer_and_print("request", body).await?;
-
-    println!("Request parts:");
-    dbg!(&parts);
-    let req = Request::from_parts(parts, Body::from(bytes));
-
-    let mut res = next.run(req).await;
-
-    let headers = res.headers_mut();
-    dbg!(headers);
-
-    let (parts, body) = res.into_parts();
-
-    println!("Response body:");
-    dbg!(&body);
-    let bytes = buffer_and_print("response", body).await?;
-
-    println!("Response parts:");
-    dbg!(&parts);
-    let res = Response::from_parts(parts, Body::from(bytes));
-
-    Ok(res)
-}
-
-async fn buffer_and_print<B>(direction: &str, body: B) -> Result<Bytes, (StatusCode, String)>
-where
-    B: axum::body::HttpBody<Data = Bytes>,
-    B::Error: std::fmt::Display,
-{
-    let bytes = match hyper::body::to_bytes(body).await {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                format!("failed to read {} body: {}", direction, err),
-            ));
-        }
-    };
-
-    if let Ok(body) = std::str::from_utf8(&bytes) {
-        tracing::debug!("{} body = {:?}", direction, body);
-    }
-
-    Ok(bytes)
-}
 
 // Frontend logic
 async fn show_form() -> Html<&'static str> {
