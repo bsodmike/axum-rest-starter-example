@@ -52,7 +52,10 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
             HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str())
                 .unwrap();
         let headers = res.headers_mut();
-        headers.insert(http::header::LOCATION, "/".parse().unwrap());
+        headers.insert(
+            http::header::LOCATION,
+            req.uri().to_string().parse().unwrap(),
+        );
         headers.insert(http::header::SET_COOKIE, cookie_value);
 
         // It is also possible to call `let res = res.map(axum::body::boxed)`
