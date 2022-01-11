@@ -100,14 +100,11 @@ pub async fn accept_form(
             .body(Body::empty())
             .unwrap();
     };
-    dbg!(header);
-    println!("------>>>>>> HEADER");
-    dbg!(headers);
 
-    //match save_form(&state, &input).await {
-    //    Ok(_) => (),
-    //    Err(e) => tracing::error!("Failed: {:?}", e),
-    //}
+    match save_form(&header, &state, &input).await {
+        Ok(_) => (),
+        Err(e) => tracing::error!("Failed: {:?}", e),
+    }
 
     // Redirect::to("/".parse().unwrap())
     let mut response = Response::builder()
@@ -122,6 +119,7 @@ pub async fn accept_form(
 }
 
 pub async fn save_form(
+    user_uuid: &HeaderValue,
     state: &Extension<crate::AppState>,
     input: &Input,
 ) -> redis::RedisResult<()> {
@@ -131,9 +129,10 @@ pub async fn save_form(
     let name = input.name.to_owned();
     let name_str = &name[..];
 
-    con.set("async-key1", name_str).await?;
-    let result: String = con.get("async-key1").await?;
-    println!("->> my_key: {}\n", result);
+    let uuid = user_uuid.to_str().unwrap();
+    con.set(uuid, name_str).await?;
+    let result: String = con.get(uuid).await?;
+    println!("->> User UUID: {}\n", result);
 
     Ok(())
 }
