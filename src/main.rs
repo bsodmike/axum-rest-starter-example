@@ -1,5 +1,4 @@
 #![allow(unused_imports)]
-use askama::Template;
 use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
 use axum::{
@@ -36,6 +35,7 @@ use tower_http::trace::TraceLayer;
 
 pub mod configure;
 pub mod errors;
+pub mod handlers;
 pub mod middleware;
 pub mod session;
 pub mod wrappers;
@@ -68,7 +68,7 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 });
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     redis_client: redis::Client,
 }
 
@@ -98,12 +98,12 @@ async fn main() {
 
     // build our application with some routes
     let app = Router::new()
-        .route("/", get(show_form).post(accept_form))
-        .route("/privacy-policy", get(privacy_policy_handler))
+        .route("/", get(handlers::show_form).post(handlers::accept_form))
+        .route("/privacy-policy", get(handlers::privacy_policy_handler))
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
-    let app = app.fallback(handler_404.into_service());
+    let app = app.fallback(handlers::handler_404.into_service());
 
     // run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
@@ -112,76 +112,4 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
-}
-
-async fn privacy_policy_handler() {}
-
-// Templates
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    uuid: uuid::Uuid,
-}
-
-struct HtmlTemplate<T>(T);
-
-impl<T> IntoResponse for HtmlTemplate<T>
-where
-    T: Template,
-{
-    fn into_response(self) -> Response {
-        match self.0.render() {
-            Ok(html) => Html(html).into_response(),
-            Err(err) => Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(body::boxed(Full::from(format!(
-                    "Failed to render template. Error: {}",
-                    err
-                ))))
-                .unwrap(),
-        }
-    }
-}
-
-// Frontend logic
-async fn show_form(session_user: crate::session::UserFromSession) -> impl IntoResponse {
-    let uuid = session_user.uuid;
-    let template = IndexTemplate { uuid };
-    HtmlTemplate(template)
-}
-
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct Input {
-    name: String,
-    email: String,
-}
-
-async fn accept_form(Form(input): Form<Input>, state: Extension<AppState>) -> Redirect {
-    dbg!(&input);
-
-    match save_form(&input, &state).await {
-        Ok(_) => (),
-        Err(e) => tracing::error!("Failed: {:?}", e),
-    }
-
-    Redirect::to("/".parse().unwrap())
-}
-
-async fn save_form(input: &Input, state: &Extension<AppState>) -> redis::RedisResult<()> {
-    let client = &state.redis_client;
-    let mut con = client.get_async_connection().await?;
-
-    let name = input.name.to_owned();
-    let name_str = &name[..];
-
-    con.set("async-key1", name_str).await?;
-    let result: String = con.get("async-key1").await?;
-    println!("->> my_key: {}\n", result);
-
-    Ok(())
-}
-
-async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
-    StatusCode::NOT_FOUND
 }
