@@ -1,5 +1,7 @@
 # register-otp
 
+[![CI](https://github.com/bsodmike/register_otp/actions/workflows/rust.yml/badge.svg)](https://github.com/bsodmike/register_otp/actions/workflows/rust.yml)
+
 ## Dev Setup
 
 (1) Run `docker compose up` to fire up a local Redis server on port `6400`.
