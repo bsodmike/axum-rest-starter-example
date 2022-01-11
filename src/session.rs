@@ -7,12 +7,13 @@ use axum::{
         rejection::TypedHeaderRejectionReason, Extension, Form, FromRequest, Path, RequestParts,
         TypedHeader,
     },
-    headers::{Cookie, HeaderMapExt},
-    http::{self, HeaderValue, Request, StatusCode},
+    headers::{Cookie, HeaderMap, HeaderMapExt},
+    http::{self, header::HeaderName, HeaderValue, Request, StatusCode},
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
@@ -25,6 +26,22 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
         .expect("`MemoryStore` extension missing");
 
     let headers = req.headers();
+    let mut headers_copy = HeaderMap::new();
+
+    for header in headers.iter() {
+        let _header = header.clone();
+        if let (k, v) = header {
+            let hv = v.to_str().expect("Unable to fetch header value");
+
+            let value: &str = hv;
+            let header_value: HeaderValue = HeaderValue::from_str(value).unwrap();
+            let header_name: HeaderName = HeaderName::from_str(k.as_str()).unwrap();
+            headers_copy.insert(header_name, header_value);
+        };
+    }
+
+    tracing::debug!("Headers copied: {:?}", &headers_copy);
+
     let cookie = headers.typed_try_get::<Cookie>().unwrap();
 
     let session_cookie = cookie
@@ -105,11 +122,12 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
 
     // TODO need to use the User UUID
     let mut res = next.run(req).await;
-    let _headers = res.headers_mut();
-    _headers.insert(
+    let mut _headers = res.headers_mut();
+    headers_copy.insert(
         AXUM_USER_UUID,
         HeaderValue::from_str(format!("{}", user_id.0).as_str()).unwrap(),
     );
+    _headers = &mut headers_copy;
 
     Ok(res)
 }

@@ -9,7 +9,10 @@ use axum::{
     },
     handler::Handler,
     headers::{Cookie, Header, HeaderMapExt},
-    http::{self, header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
+    http::{
+        self, header::HeaderName, header::LOCATION, HeaderMap, HeaderValue, Method, Request,
+        StatusCode, Uri,
+    },
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
@@ -18,7 +21,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::errors::Error;
+use crate::{errors::Error, session::AXUM_USER_UUID};
 
 pub async fn privacy_policy_handler() {}
 
@@ -61,6 +64,8 @@ pub struct Input {
     name: String,
     email: String,
 }
+
+pub struct ExtractUserUUID(HeaderValue);
 
 pub async fn accept_form(
     headers: HeaderMap,
