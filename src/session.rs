@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
+pub const AXUM_USER_UUID: &str = "axum_user_uuid";
 
 pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
     let store = req
@@ -79,7 +80,7 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
     );
 
     // continue to decode the session cookie
-    let _user_id = if let Some(session) = store
+    let user_id = if let Some(session) = store
         .load_session(session_cookie.unwrap().to_owned())
         .await
         .unwrap()
@@ -103,7 +104,12 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
     };
 
     // TODO need to use the User UUID
-    let res = next.run(req).await;
+    let mut res = next.run(req).await;
+    let _headers = res.headers_mut();
+    _headers.insert(
+        AXUM_USER_UUID,
+        HeaderValue::from_str(format!("{}", user_id.0).as_str()).unwrap(),
+    );
 
     Ok(res)
 }

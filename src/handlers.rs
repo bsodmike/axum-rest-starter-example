@@ -8,7 +8,7 @@ use axum::{
         TypedHeader,
     },
     handler::Handler,
-    headers::Cookie,
+    headers::{Cookie, Header, HeaderMapExt},
     http::{self, header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
@@ -17,6 +17,8 @@ use axum::{
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::errors::Error;
 
 pub async fn privacy_policy_handler() {}
 
@@ -60,22 +62,50 @@ pub struct Input {
     email: String,
 }
 
-pub async fn accept_form(Form(input): Form<Input>, state: Extension<crate::AppState>) -> Redirect {
+pub async fn accept_form(
+    headers: HeaderMap,
+    Form(input): Form<Input>,
+    state: Extension<crate::AppState>,
+) -> impl IntoResponse {
     dbg!(&input);
 
-    match save_form(&input, &state).await {
+    let err_value = HeaderValue::from_str("").unwrap();
+    let header: Result<&HeaderValue, crate::Error> =
+        if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
+            Ok(value)
+        } else {
+            tracing::error!("Session UUID missing!");
+
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(Body::empty())
+                .unwrap();
+        };
+    println!("------>>>>>> HEADER");
+    dbg!(header);
+
+    match save_form(&state, &input).await {
         Ok(_) => (),
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
 
-    Redirect::to("/".parse().unwrap())
+    // Redirect::to("/".parse().unwrap())
+    let mut response = Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .body(Body::empty())
+        .unwrap();
+
+    let headers = response.headers_mut();
+    headers.insert(LOCATION, "/".parse().unwrap());
+
+    response
 }
 
 pub async fn save_form(
-    input: &Input,
     state: &Extension<crate::AppState>,
+    input: &Input,
 ) -> redis::RedisResult<()> {
-    let client = &state.redis_client;
+    let client = &state.redis_session_client;
     let mut con = client.get_async_connection().await?;
 
     let name = input.name.to_owned();

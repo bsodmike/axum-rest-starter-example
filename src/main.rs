@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use session::session_uuid_middleware;
 use std::convert::Infallible;
-use std::env;
 use std::net::SocketAddr;
+use std::{collections::HashMap, env};
 use tower::{
     filter::AsyncFilterLayer, limit::ConcurrencyLimitLayer, util::AndThenLayer, BoxError,
     ServiceBuilder,
@@ -69,8 +69,12 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 
 #[derive(Clone)]
 pub struct AppState {
-    redis_client: redis::Client,
+    redis_uuid_client: redis::Client,
+    redis_session_client: redis::Client,
 }
+
+const REDIS_USER_UUID_DB: i8 = 0;
+const REDIS_USER_SESSION_DB: i8 = 1;
 
 #[tokio::main]
 async fn main() {
@@ -86,7 +90,16 @@ async fn main() {
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(AppState {
-            redis_client: crate::wrappers::redis_wrapper::connect().await,
+            redis_uuid_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+                "db",
+                REDIS_USER_UUID_DB,
+            )]))
+            .await,
+            redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+                "db",
+                REDIS_USER_SESSION_DB,
+            )]))
+            .await,
         }))
         .layer(axum_extra::middleware::from_fn(
             crate::middleware::debugging::print_request_info_middleware,

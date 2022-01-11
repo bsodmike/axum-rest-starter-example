@@ -1,9 +1,9 @@
 use crate::configure;
 use crate::errors::Error;
 use redis::AsyncCommands;
-use std::env;
+use std::{collections::HashMap, env};
 
-pub async fn connect() -> redis::Client {
+pub async fn connect(details: HashMap<&str, i8>) -> redis::Client {
     let redis_host_name: String =
         configure::fetch::<String>(String::from("redis_host_name")).unwrap_or_default();
     let redis_password: String =
