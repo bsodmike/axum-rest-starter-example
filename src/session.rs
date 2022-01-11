@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-pub const AXUM_SESSION_COOKIE_NAME: &str = "axum_session";
-pub const AXUM_USER_UUID: &str = "axum_user_uuid";
+pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
+pub const AXUM_USER_UUID: &str = "axum-user-uuid";
 
 pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
     let store = req
@@ -128,6 +128,9 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
         HeaderValue::from_str(format!("{}", user_id.0).as_str()).unwrap(),
     );
     _headers = &mut headers_copy;
+
+    tracing::debug!("session_uuid_middleware, Headers: {:?}", &_headers);
+    dbg!(&_headers);
 
     Ok(res)
 }

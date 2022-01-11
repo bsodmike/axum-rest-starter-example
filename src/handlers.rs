@@ -65,16 +65,31 @@ pub struct Input {
     email: String,
 }
 
-pub struct ExtractUserUUID(HeaderValue);
+//pub struct ExtractUserUUID(HeaderValue);
+//
+//#[async_trait]
+//impl<T, B> FromRequest<B> for ExtractUserUUID<T>
+//where
+//    T: Header,
+//    B: Send,
+//{
+//    type Rejection = TypedHeaderRejection;
+//
+//    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {}
+//}
 
 pub async fn accept_form(
-    headers: HeaderMap,
     Form(input): Form<Input>,
+    headers: HeaderMap,
     state: Extension<crate::AppState>,
 ) -> impl IntoResponse {
     dbg!(&input);
 
     let err_value = HeaderValue::from_str("").unwrap();
+
+    dbg!(&headers);
+    dbg!(headers.get(crate::session::AXUM_USER_UUID));
+
     let header: Result<&HeaderValue, crate::Error> =
         if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
             Ok(value)
@@ -87,12 +102,12 @@ pub async fn accept_form(
                 .unwrap();
         };
     println!("------>>>>>> HEADER");
-    dbg!(header);
+    dbg!(headers);
 
-    match save_form(&state, &input).await {
-        Ok(_) => (),
-        Err(e) => tracing::error!("Failed: {:?}", e),
-    }
+    //match save_form(&state, &input).await {
+    //    Ok(_) => (),
+    //    Err(e) => tracing::error!("Failed: {:?}", e),
+    //}
 
     // Redirect::to("/".parse().unwrap())
     let mut response = Response::builder()

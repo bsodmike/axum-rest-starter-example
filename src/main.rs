@@ -101,9 +101,9 @@ async fn main() {
             )]))
             .await,
         }))
-        .layer(axum_extra::middleware::from_fn(
-            crate::middleware::debugging::print_request_info_middleware,
-        ))
+        //.layer(axum_extra::middleware::from_fn(
+        //    crate::middleware::debugging::print_request_info_middleware,
+        //))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
             session::session_uuid_middleware,
