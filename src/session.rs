@@ -19,7 +19,7 @@ use uuid::Uuid;
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
 
-pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
+pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
     let store = req
         .extensions()
         .get::<MemoryStore>()
@@ -120,8 +120,17 @@ pub async fn session_uuid_middleware<B>(req: Request<B>, next: Next<B>) -> impl 
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    // TODO need to use the User UUID
+    let request_headers = req.headers_mut();
+    request_headers.insert(
+        AXUM_USER_UUID,
+        HeaderValue::from_str(format!("{}", user_id.0).as_str()).unwrap(),
+    );
+
+    /*
+     * Call the next handler in the middleware stack
+     */
     let mut res = next.run(req).await;
+
     let mut _headers = res.headers_mut();
     headers_copy.insert(
         AXUM_USER_UUID,

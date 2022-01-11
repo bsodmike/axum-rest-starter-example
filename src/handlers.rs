@@ -90,17 +90,17 @@ pub async fn accept_form(
     dbg!(&headers);
     dbg!(headers.get(crate::session::AXUM_USER_UUID));
 
-    let header: Result<&HeaderValue, crate::Error> =
-        if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
-            Ok(value)
-        } else {
-            tracing::error!("Session UUID missing!");
+    let header: &HeaderValue = if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
+        value
+    } else {
+        tracing::error!("Session UUID missing!");
 
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
-                .unwrap();
-        };
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::empty())
+            .unwrap();
+    };
+    dbg!(header);
     println!("------>>>>>> HEADER");
     dbg!(headers);
 
