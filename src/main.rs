@@ -116,6 +116,7 @@ async fn main() {
 
 async fn privacy_policy_handler() {}
 
+// Templates
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
@@ -143,70 +144,10 @@ where
 }
 
 // Frontend logic
-async fn show_form(session_user: UserFromSession) -> impl IntoResponse {
+async fn show_form(session_user: crate::session::UserFromSession) -> impl IntoResponse {
     let uuid = session_user.uuid;
     let template = IndexTemplate { uuid };
     HtmlTemplate(template)
-}
-
-struct UserFromSession {
-    uuid: uuid::Uuid,
-}
-
-#[async_trait]
-impl<B> FromRequest<B> for UserFromSession
-where
-    B: Send, // required by `async_trait`
-{
-    type Rejection = http::StatusCode;
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<MemoryStore>::from_request(req)
-            .await
-            .expect("`MemoryStore` extension missing");
-
-        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
-            .await
-            .unwrap();
-
-        tracing::debug!("cookie: {:?}", cookie);
-
-        let session_cookie = cookie
-            .as_ref()
-            .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
-
-        tracing::debug!(
-            "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
-            &session_cookie.unwrap()
-        );
-
-        // continue to decode the session cookie
-        let user_id = if let Some(session) = store
-            .load_session(session_cookie.unwrap().to_owned())
-            .await
-            .unwrap()
-        {
-            if let Some(user_id) = session.get::<crate::session::UserId>("user_id") {
-                tracing::debug!(
-                    "session_uuid_middleware: session decoded success, user_id={:?}",
-                    user_id
-                );
-                user_id
-            } else {
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        } else {
-            tracing::debug!(
-                "session_uuid_middleware: Err session does not exist in store, {}={}",
-                crate::session::AXUM_SESSION_COOKIE_NAME,
-                session_cookie.unwrap()
-            );
-            return Err(StatusCode::BAD_REQUEST);
-        };
-
-        Ok(Self { uuid: user_id.0 })
-    }
 }
 
 #[derive(Deserialize, Debug)]
