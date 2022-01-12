@@ -69,12 +69,8 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 
 #[derive(Clone)]
 pub struct AppState {
-    redis_uuid_client: redis::Client,
     redis_session_client: redis::Client,
 }
-
-const REDIS_USER_UUID_DB: i8 = 0;
-const REDIS_USER_SESSION_DB: i8 = 1;
 
 #[tokio::main]
 async fn main() {
@@ -87,17 +83,15 @@ async fn main() {
     // `MemoryStore` just used as an example. Don't use this in production.
     let store = MemoryStore::new();
 
+    let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
+        .expect("Redis Session DB configuration missing!");
+
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(AppState {
-            redis_uuid_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
-                "db",
-                REDIS_USER_UUID_DB,
-            )]))
-            .await,
             redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
                 "db",
-                REDIS_USER_SESSION_DB,
+                redis_session_db,
             )]))
             .await,
         }))
