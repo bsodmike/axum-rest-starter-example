@@ -65,30 +65,14 @@ pub struct Input {
     email: String,
 }
 
-//pub struct ExtractUserUUID(HeaderValue);
-//
-//#[async_trait]
-//impl<T, B> FromRequest<B> for ExtractUserUUID<T>
-//where
-//    T: Header,
-//    B: Send,
-//{
-//    type Rejection = TypedHeaderRejection;
-//
-//    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {}
-//}
-
 pub async fn accept_form(
     Form(input): Form<Input>,
     headers: HeaderMap,
     state: Extension<crate::AppState>,
 ) -> impl IntoResponse {
     dbg!(&input);
-
-    let err_value = HeaderValue::from_str("").unwrap();
-
-    dbg!(&headers);
-    dbg!(headers.get(crate::session::AXUM_USER_UUID));
+    //dbg!(&headers);
+    //dbg!(headers.get(crate::session::AXUM_USER_UUID));
 
     let header: &HeaderValue = if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
         value
@@ -101,7 +85,7 @@ pub async fn accept_form(
             .unwrap();
     };
 
-    match save_form(&header, &state, &input).await {
+    match save_form(header, &state, &input).await {
         Ok(_) => (),
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
@@ -137,6 +121,6 @@ pub async fn save_form(
     Ok(())
 }
 
-pub async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
+pub async fn handler_404(_method: Method, _uri: Uri) -> impl IntoResponse {
     StatusCode::NOT_FOUND
 }

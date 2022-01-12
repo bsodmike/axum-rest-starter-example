@@ -25,10 +25,6 @@ pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
 
 pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
-    let store = req
-        .extensions()
-        .get::<MemoryStore>()
-        .expect("`MemoryStore` extension missing!");
     let app_state = req
         .extensions()
         .get::<AppState>()
@@ -43,15 +39,13 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     let mut headers_copy = HeaderMap::new();
 
     for header in headers.iter() {
-        let _header = header.clone();
-        if let (k, v) = header {
-            let hv = v.to_str().expect("Unable to fetch header value");
+        let (k, v) = header;
+        let hv = v.to_str().expect("Unable to fetch header value");
 
-            let value: &str = hv;
-            let header_value: HeaderValue = HeaderValue::from_str(value).unwrap();
-            let header_name: HeaderName = HeaderName::from_str(k.as_str()).unwrap();
-            headers_copy.insert(header_name, header_value);
-        };
+        let value: &str = hv;
+        let header_value: HeaderValue = HeaderValue::from_str(value).unwrap();
+        let header_name: HeaderName = HeaderName::from_str(k.as_str()).unwrap();
+        headers_copy.insert(header_name, header_value);
     }
 
     tracing::debug!("Headers copied: {:?}", &headers_copy);
@@ -71,26 +65,22 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         let gen_cookie = generate_cookie(64);
         let new_cookie: &str = gen_cookie.as_str();
 
-        //let mut session = Session::new();
-        //session.insert("user_id", user_id).unwrap();
-        //let cookie = store.store_session(session).await.unwrap().unwrap();
-
         // Store session UUID against the cookie hash into Redis
-        let persist_cookie = new_cookie.clone();
-        let persist_raw_uuid = raw_uuid.clone();
-        let redis_set = redis_connection
-            .set::<String, String, String>(persist_cookie.to_string(), persist_raw_uuid.to_string())
-            .await;
+        let persist_cookie = new_cookie;
 
-        let check = if let Ok(value) = redis_connection
-            .get::<String, String>(new_cookie.clone().to_string())
+        #[allow(clippy::clone_double_ref)]
+        let persist_raw_uuid = raw_uuid.clone();
+
+        let _redis_set = if let Ok(value) = redis_connection
+            .set::<String, String, String>(persist_cookie.to_string(), persist_raw_uuid.to_string())
             .await
         {
-            println!("Value in Redis: {:?}", value)
-        };
+            value
+        } else {
+            tracing::error!("Unable to persist cookie hash!");
 
-        tracing::debug!("UUID: {:?}", raw_uuid);
-        tracing::debug!("cookie: {:?}", new_cookie);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        };
 
         tracing::debug!(
             "Created UUID {:?} for user cookie, {:?}={:?}",
@@ -133,7 +123,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     );
 
     // continue to decode session, fetch UUID from Redis
-    let raw_session_cookie: &str = &session_cookie.unwrap();
+    let raw_session_cookie: &str = session_cookie.unwrap();
     let fetched_uuid: String = redis_connection.get(raw_session_cookie).await.unwrap();
     //tracing::debug!("Fetched UUID from Redis: {:?}", fetched_uuid);
     //dbg!(fetched_uuid);
@@ -219,10 +209,6 @@ where
     type Rejection = http::StatusCode;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<MemoryStore>::from_request(req)
-            .await
-            .expect("`MemoryStore` extension missing");
-
         // Connect to Redis
         let Extension(app_state) = Extension::<AppState>::from_request(req)
             .await
@@ -250,7 +236,7 @@ where
         );
 
         // continue to decode the session cookie
-        let raw_session_cookie: &str = &session_cookie.unwrap();
+        let raw_session_cookie: &str = session_cookie.unwrap();
         let fetched_uuid: String = redis_connection
             .get::<String, String>(raw_session_cookie.to_string())
             .await
