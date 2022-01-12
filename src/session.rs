@@ -12,9 +12,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
+use rand::RngCore;
+use redis::AsyncCommands;
+use redis::Client;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
+
+use crate::AppState;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
@@ -23,7 +28,16 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     let store = req
         .extensions()
         .get::<MemoryStore>()
-        .expect("`MemoryStore` extension missing");
+        .expect("`MemoryStore` extension missing!");
+    let app_state = req
+        .extensions()
+        .get::<AppState>()
+        .expect("`AppState` extension missing!");
+    let redis_client: &redis::Client = &app_state.redis_cookie_client;
+    let mut redis_connection = redis_client
+        .get_async_connection()
+        .await
+        .expect("Unable to fetch redis connection!");
 
     let headers = req.headers();
     let mut headers_copy = HeaderMap::new();
@@ -52,15 +66,31 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     // return the new created session cookie for client
     if session_cookie.is_none() {
         let user_id = UserId::new();
-        let mut session = Session::new();
-        session.insert("user_id", user_id).unwrap();
-        let cookie = store.store_session(session).await.unwrap().unwrap();
+        let new_uuid = user_id.0.to_hyphenated().to_string();
+        let raw_uuid: &str = new_uuid.as_str();
+        let gen_cookie = generate_cookie(64);
+        let new_cookie: &str = gen_cookie.as_str();
+
+        //let mut session = Session::new();
+        //session.insert("user_id", user_id).unwrap();
+        //let cookie = store.store_session(session).await.unwrap().unwrap();
+
+        // Store session UUID against the cookie hash into Redis
+        let persist_cookie = new_cookie.clone();
+        let persist_raw_uuid = raw_uuid.clone();
+        redis_connection.set::<String, String, String>(
+            persist_cookie.to_string(),
+            persist_raw_uuid.to_string(),
+        );
+
+        tracing::debug!("UUID: {:?}", raw_uuid);
+        tracing::debug!("cookie: {:?}", new_cookie);
 
         tracing::debug!(
             "Created UUID {:?} for user cookie, {:?}={:?}",
-            user_id,
+            raw_uuid,
             AXUM_SESSION_COOKIE_NAME,
-            cookie
+            new_cookie
         );
 
         // Return response only, without advancing through the middleware stack; we pass the cookie
@@ -73,7 +103,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             .unwrap();
 
         let cookie_value =
-            HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str())
+            HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, new_cookie).as_str())
                 .unwrap();
         let headers = res.headers_mut();
         headers.insert(
@@ -211,4 +241,11 @@ where
 
         Ok(Self { uuid: user_id.0 })
     }
+}
+
+/// generates a random cookie value
+fn generate_cookie(len: usize) -> String {
+    let mut key = vec![0u8; len];
+    rand::thread_rng().fill_bytes(&mut key);
+    base64::encode(key)
 }
