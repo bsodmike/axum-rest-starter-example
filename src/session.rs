@@ -125,40 +125,12 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     // continue to decode session, fetch UUID from Redis
     let raw_session_cookie: &str = session_cookie.unwrap();
     let fetched_uuid: String = redis_connection.get(raw_session_cookie).await.unwrap();
-    //tracing::debug!("Fetched UUID from Redis: {:?}", fetched_uuid);
-    //dbg!(fetched_uuid);
 
     let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
         user_id
     } else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
-
-    // continue to decode the session cookie
-    //let user_id = if let Some(session) = store
-    //    .load_session(session_cookie.unwrap().to_owned())
-    //    .await
-    //    .unwrap()
-    //{
-    //    if let Some(user_id) = session.get::<UserId>("user_id") {
-    //        tracing::debug!(
-    //            "session_uuid_middleware: session decoded success, user_id={:?}",
-    //            user_id
-    //        );
-    //        user_id
-    //    } else {
-    //        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    //    }
-    //} else {
-    //    tracing::debug!(
-    //        "session_uuid_middleware: Error!! Session does not exist in store, {}={}",
-    //        AXUM_SESSION_COOKIE_NAME,
-    //        session_cookie.unwrap()
-    //    );
-    //    return Err(StatusCode::BAD_REQUEST);
-    //};
-
-    //let user_id = uuid::Uuid::parse_str(&fetched_uuid).unwrap();
 
     let request_headers = req.headers_mut();
     request_headers.insert(
@@ -241,37 +213,12 @@ where
             .get::<String, String>(raw_session_cookie.to_string())
             .await
             .unwrap();
-        //tracing::debug!("Fetched UUID from Redis: {:?}", fetched_uuid);
-        //dbg!(fetched_uuid);
 
         let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
             user_id
         } else {
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         };
-
-        //let user_id = if let Some(session) = store
-        //    .load_session(session_cookie.unwrap().to_owned())
-        //    .await
-        //    .unwrap()
-        //{
-        //    if let Some(user_id) = session.get::<crate::session::UserId>("user_id") {
-        //        tracing::debug!(
-        //            "session_uuid_middleware: session decoded success, user_id={:?}",
-        //            user_id
-        //        );
-        //        user_id
-        //    } else {
-        //        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        //    }
-        //} else {
-        //    tracing::debug!(
-        //        "session_uuid_middleware: Err session does not exist in store, {}={}",
-        //        crate::session::AXUM_SESSION_COOKIE_NAME,
-        //        session_cookie.unwrap()
-        //    );
-        //    return Err(StatusCode::BAD_REQUEST);
-        //};
 
         Ok(Self {
             uuid: UserId::from(user_id).0,
