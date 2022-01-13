@@ -21,7 +21,10 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{errors::Error, session::AXUM_USER_UUID};
+use crate::{
+    errors::Error,
+    session::{Session, AXUM_USER_UUID},
+};
 
 pub async fn privacy_policy_handler() {}
 
@@ -52,8 +55,8 @@ where
     }
 }
 
-pub async fn show_form(session_user: crate::session::UserFromSession) -> impl IntoResponse {
-    let uuid = session_user.uuid;
+pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
+    let uuid = session.uuid;
     let template = IndexTemplate { uuid };
     HtmlTemplate(template)
 }
@@ -67,6 +70,7 @@ pub struct Input {
 
 pub async fn accept_form(
     Form(input): Form<Input>,
+    session: crate::session::Session,
     headers: HeaderMap,
     state: Extension<crate::AppState>,
 ) -> impl IntoResponse {
@@ -74,18 +78,18 @@ pub async fn accept_form(
     //dbg!(&headers);
     //dbg!(headers.get(crate::session::AXUM_USER_UUID));
 
-    let header: &HeaderValue = if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
-        value
-    } else {
-        tracing::error!("Session UUID missing!");
+    //let header: &HeaderValue = if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
+    //    value
+    //} else {
+    //    tracing::error!("Session UUID missing!");
 
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body(Body::empty())
-            .unwrap();
-    };
+    //    return Response::builder()
+    //        .status(StatusCode::BAD_REQUEST)
+    //        .body(Body::empty())
+    //        .unwrap();
+    //};
 
-    match save_form(header, &state, &input).await {
+    match save_form(&input, &session, &headers, &state).await {
         Ok(_) => (),
         Err(e) => tracing::error!("Failed: {:?}", e),
     }
@@ -103,20 +107,25 @@ pub async fn accept_form(
 }
 
 pub async fn save_form(
-    user_uuid: &HeaderValue,
-    state: &Extension<crate::AppState>,
     input: &Input,
+    session: &Session,
+    headers: &HeaderMap,
+    state: &Extension<crate::AppState>,
 ) -> redis::RedisResult<()> {
-    let client = &state.redis_session_client;
-    let mut con = client.get_async_connection().await?;
-
     let name = input.name.to_owned();
     let name_str = &name[..];
 
-    let uuid = user_uuid.to_str().unwrap();
-    con.set(uuid, name_str).await?;
-    let result: String = con.get(uuid).await?;
-    println!("->> User UUID: {}\n", result);
+    session
+        .update(headers, &state.redis_session_client, &name_str)
+        .await;
+
+    //let client = &state.redis_session_client;
+    //let mut con = client.get_async_connection().await?;
+
+    //let uuid = user_uuid.to_str().unwrap();
+    //con.set(uuid, name_str).await?;
+    //let result: String = con.get(uuid).await?;
+    //println!("->> User UUID: {}\n", result);
 
     Ok(())
 }

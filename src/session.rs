@@ -1,4 +1,4 @@
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session as AsyncSession, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::AppState;
+use crate::{errors, AppState};
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
@@ -169,12 +169,45 @@ impl UserId {
     }
 }
 
-pub struct UserFromSession {
+#[derive(Deserialize, Debug, Clone, Copy)]
+pub struct Session {
     pub uuid: uuid::Uuid,
 }
 
+impl Session {
+    pub async fn update(
+        self,
+        headers: &HeaderMap,
+        client: &redis::Client,
+        name: &str,
+    ) -> Result<(), errors::Error> {
+        let user_uuid: &HeaderValue =
+            if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
+                value
+            } else {
+                return Err(errors::Error::NotImplementedError);
+            };
+
+        let mut con = client
+            .get_async_connection()
+            .await
+            .expect("Unable to connect to Redis!");
+        let uuid = user_uuid.to_str().unwrap();
+        let _ = if let Ok(val) = con.set::<&str, &str, String>(uuid, name).await {
+            val
+        } else {
+            return Err(errors::Error::RedisSetError);
+        };
+
+        let result: String = con.get(uuid).await.unwrap();
+        println!("->> User UUID: {}\n", result);
+
+        Ok(())
+    }
+}
+
 #[async_trait]
-impl<B> FromRequest<B> for UserFromSession
+impl<B> FromRequest<B> for Session
 where
     B: Send, // required by `async_trait`
 {
