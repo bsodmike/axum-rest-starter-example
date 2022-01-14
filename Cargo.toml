@@ -24,6 +24,7 @@ tower = { version = "0.4.11", features = ["limit", "filter", "util"] }
 tower-http = { version = "0.2.0", features = ["trace"] }
 hyper = { version = "0.14", features = ["full"] }
 async-session = "3.0.0"
+async-redis-session = { path = "vendor/async-redis-session" }
 uuid = { version = "0.8", features = ["v4", "serde"] }
 askama = "0.10"
 rand = "0.8.4"

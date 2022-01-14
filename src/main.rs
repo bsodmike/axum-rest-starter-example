@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_redis_session::RedisSessionStore;
+use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
 use axum::{
     async_trait,
@@ -71,7 +72,6 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 #[derive(Clone)]
 pub struct AppState {
     redis_session_client: redis::Client,
-    redis_cookie_client: redis::Client,
 }
 
 #[tokio::main]
@@ -82,28 +82,23 @@ async fn main() {
     }
     tracing_subscriber::fmt::init();
 
-    // `MemoryStore` just used as an example. Don't use this in production.
-    let store = MemoryStore::new();
-
     let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
         .expect("Redis Session DB configuration missing!");
-    let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
-        .expect("Redis Cookie DB configuration missing!");
+    //let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
+    //    .expect("Redis Cookie DB configuration missing!");
+
+    let app_state = AppState {
+        redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+            "db",
+            redis_session_db,
+        )]))
+        .await,
+    };
+    let store = RedisSessionStore::from_client(app_state.redis_session_client);
 
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
-        .layer(AddExtensionLayer::new(AppState {
-            redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
-                "db",
-                redis_session_db,
-            )]))
-            .await,
-            redis_cookie_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
-                "db",
-                redis_cookie_db,
-            )]))
-            .await,
-        }))
+        .layer(AddExtensionLayer::new(app_state))
         //.layer(axum_extra::middleware::from_fn(
         //    crate::middleware::debugging::print_request_info_middleware,
         //))
