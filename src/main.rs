@@ -87,6 +87,9 @@ async fn main() {
     //let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
     //    .expect("Redis Cookie DB configuration missing!");
 
+    let session_client =
+        crate::wrappers::redis_wrapper::connect(HashMap::from([("db", redis_session_db.clone())]))
+            .await;
     let app_state = AppState {
         redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
             "db",
@@ -94,7 +97,7 @@ async fn main() {
         )]))
         .await,
     };
-    let store = RedisSessionStore::from_client(app_state.redis_session_client);
+    let store = RedisSessionStore::from_client(session_client);
 
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
@@ -109,7 +112,7 @@ async fn main() {
 
     // build our application with some routes
     let app = Router::new()
-        .route("/", get(handlers::show_form).post(handlers::accept_form))
+        .route("/", get(handlers::show_form).post(handlers::handle_form))
         .route("/privacy-policy", get(handlers::privacy_policy_handler))
         .layer(middleware_stack);
 

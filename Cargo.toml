@@ -29,4 +29,6 @@ uuid = { version = "0.8", features = ["v4", "serde"] }
 askama = "0.10"
 rand = "0.8.4"
 base64 = "0.13.0"
+futures = "0.3.19"
+serde_urlencoded = "0.7.0"
 

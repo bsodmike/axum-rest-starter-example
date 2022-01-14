@@ -1,4 +1,5 @@
-use async_session::{MemoryStore, Session as AsyncSession, SessionStore as _};
+use async_redis_session::RedisSessionStore;
+use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -12,6 +13,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
+use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;
 use redis::Client;
@@ -19,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::{errors, AppState};
+use crate::{errors, wrappers::redis_store::RedisStore, AppState};
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
@@ -29,11 +31,17 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         .extensions()
         .get::<AppState>()
         .expect("`AppState` extension missing!");
-    let redis_client: &redis::Client = &app_state.redis_cookie_client;
-    let mut redis_connection = redis_client
-        .get_async_connection()
-        .await
-        .expect("Unable to fetch redis connection!");
+
+    let store = req
+        .extensions()
+        .get::<RedisSessionStore>()
+        .expect("`RedisSessionStore` extension missing!");
+
+    //let redis_client: &redis::Client = &app_state.redis_cookie_client;
+    //let mut redis_connection = redis_client
+    //    .get_async_connection()
+    //    .await
+    //    .expect("Unable to fetch redis connection!");
 
     let headers = req.headers();
     let mut headers_copy = HeaderMap::new();
@@ -61,32 +69,60 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     if session_cookie.is_none() {
         let user_id = UserId::new();
         let new_uuid = user_id.0.to_hyphenated().to_string();
-        let raw_uuid: &str = new_uuid.as_str();
-        let gen_cookie = generate_cookie(64);
-        let new_cookie: &str = gen_cookie.as_str();
+        let mut session = AsyncSession::new();
 
-        // Store session UUID against the cookie hash into Redis
-        let persist_cookie = new_cookie;
+        //let cookie = session.insert("id", new_uuid).map_err(|err| {
+        //    // ...
+        //    StatusCode::INTERNAL_SERVER_ERROR
+        //})?;
 
-        #[allow(clippy::clone_double_ref)]
-        let persist_raw_uuid = raw_uuid.clone();
+        dbg!(&new_uuid);
+        match session.insert("id", &new_uuid) {
+            Ok(_) => (),
+            Err(err) => {
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!("Error: {:?}", err),
+                )
+                .await;
 
-        let _redis_set = if let Ok(value) = redis_connection
-            .set::<String, String, String>(persist_cookie.to_string(), persist_raw_uuid.to_string())
-            .await
-        {
-            value
-        } else {
-            tracing::error!("Unable to persist cookie hash!");
-
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         };
 
+        let session_clone = session.clone();
+        //let cookie = store.store_session(session).await.unwrap();
+        //dbg!(&cookie);
+
+        let cookie: String = match store.store_session(session).await {
+            Ok(value) => match value {
+                Some(cookie_value) => cookie_value,
+                None => {
+                    dbg!(value);
+                    crate::utils::tracing_error(
+                        std::panic::Location::caller(),
+                        format!("Unable to fetch cookie value from new session!"),
+                    )
+                    .await;
+
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            },
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        };
+
+        crate::utils::tracing_debug(
+            std::panic::Location::caller(),
+            format!("Updated Session: {:?}", &session_clone.id()),
+        )
+        .await;
+
         tracing::debug!(
-            "Created UUID {:?} for user cookie, {:?}={:?}",
-            raw_uuid,
+            "Created cookie {:?}={:?} for UUID {} / for Session: {:?}",
             AXUM_SESSION_COOKIE_NAME,
-            new_cookie
+            &cookie,
+            &new_uuid,
+            &session_clone
         );
 
         // Return response only, without advancing through the middleware stack; we pass the cookie
@@ -99,7 +135,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             .unwrap();
 
         let cookie_value =
-            HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, new_cookie).as_str())
+            HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str())
                 .unwrap();
         let headers = res.headers_mut();
         headers.insert(
@@ -123,8 +159,21 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     );
 
     // continue to decode session, fetch UUID from Redis
-    let raw_session_cookie: &str = session_cookie.unwrap();
-    let fetched_uuid: String = redis_connection.get(raw_session_cookie).await.unwrap();
+    let session: AsyncSession = match store
+        .load_session(session_cookie.unwrap().to_string())
+        .await
+    {
+        Ok(value) => match value {
+            Some(session_value) => session_value,
+            None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        },
+        Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    let fetched_uuid = match session.get::<String>("id") {
+        Some(val) => val,
+        None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
 
     let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
         user_id
@@ -178,7 +227,7 @@ impl Session {
     pub async fn update(
         self,
         headers: &HeaderMap,
-        client: &redis::Client,
+        store: &RedisSessionStore,
         name: &str,
     ) -> Result<(), errors::CustomError> {
         let user_uuid: &HeaderValue =
@@ -188,19 +237,19 @@ impl Session {
                 return Err(errors::CustomError::NotImplementedError);
             };
 
-        let mut con = client
-            .get_async_connection()
-            .await
-            .expect("Unable to connect to Redis!");
-        let uuid = user_uuid.to_str().unwrap();
-        let _ = if let Ok(val) = con.set::<&str, &str, String>(uuid, name).await {
-            val
-        } else {
-            return Err(errors::CustomError::RedisSetError);
-        };
+        //let mut con = client
+        //    .get_async_connection()
+        //    .await
+        //    .expect("Unable to connect to Redis!");
+        //let uuid = user_uuid.to_str().unwrap();
+        //let _ = if let Ok(val) = con.set::<&str, &str, String>(uuid, name).await {
+        //    val
+        //} else {
+        //    return Err(errors::CustomError::RedisSetError);
+        //};
 
-        let result: String = con.get(uuid).await.unwrap();
-        println!("->> User UUID: {}\n", result);
+        //let result: String = con.get(uuid).await.unwrap();
+        //println!("->> User UUID: {}\n", result);
 
         Ok(())
     }
@@ -218,11 +267,9 @@ where
         let Extension(app_state) = Extension::<AppState>::from_request(req)
             .await
             .expect("`AppState` extension missing!");
-        let redis_client: &redis::Client = &app_state.redis_cookie_client;
-        let mut redis_connection = redis_client
-            .get_async_connection()
+        let Extension(store) = Extension::<RedisSessionStore>::from_request(req)
             .await
-            .expect("Unable to fetch redis connection!");
+            .expect("`RedisSessionStore` extension missing!");
 
         let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
             .await
@@ -241,11 +288,26 @@ where
         );
 
         // continue to decode the session cookie
-        let raw_session_cookie: &str = session_cookie.unwrap();
-        let fetched_uuid: String = redis_connection
-            .get::<String, String>(raw_session_cookie.to_string())
+        //let raw_session_cookie: &str = session_cookie.unwrap();
+        //let fetched_uuid: String = redis_connection
+        //    .get::<String, String>(raw_session_cookie.to_string())
+        //    .await
+        //    .unwrap();
+        let session: AsyncSession = match store
+            .load_session(session_cookie.unwrap().to_string())
             .await
-            .unwrap();
+        {
+            Ok(value) => match value {
+                Some(session_value) => session_value,
+                None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            },
+            Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        };
+
+        let fetched_uuid = match session.get::<String>("id") {
+            Some(val) => val,
+            None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        };
 
         let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
             user_id

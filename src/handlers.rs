@@ -1,10 +1,11 @@
 use askama::Template;
+use async_redis_session::RedisSessionStore;
+use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
 use axum::{
     async_trait,
-    body::{self, Body, BoxBody, Bytes, Full},
+    body::{self, Body, BoxBody, Bytes, Full, HttpBody},
     extract::{
-        extractor_middleware, rejection::TypedHeaderRejection,
-        rejection::TypedHeaderRejectionReason, Extension, Form, FromRequest, Path, RequestParts,
+        extractor_middleware, rejection::*, Extension, Form, FromRequest, Path, RequestParts,
         TypedHeader,
     },
     handler::Handler,
@@ -17,9 +18,11 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
+use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use serde_urlencoded;
 
 use crate::{
     errors::CustomError,
@@ -75,34 +78,104 @@ impl fmt::Display for Input {
     }
 }
 
-pub async fn accept_form(
-    Form(input): Form<Input>,
-    session: crate::session::Session,
-    headers: HeaderMap,
-    state: Extension<crate::AppState>,
-) -> impl IntoResponse {
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!("Form input: {:?}", &input),
-    )
-    .await;
+pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
+    let mut req_parts = RequestParts::new(req);
+    let body_taken = req_parts.take_body();
+    let store = &mut req_parts
+        .extensions()
+        .unwrap()
+        .get::<RedisSessionStore>()
+        .expect("`RedisSessionStore` extension missing!");
 
-    let name = input.name.to_owned();
-    let name_str = &name[..];
+    //let cookie = Option::<TypedHeader<Cookie>>::from_request(&mut req_parts)
+    //    .await
+    //    .unwrap();
 
-    match session
-        .update(&headers, &state.redis_session_client, &name_str)
-        .await
-    {
-        Ok(_) => (),
+    let headers = if let Some(value) = req_parts.headers() {
+        value
+    } else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .unwrap();
+    };
+
+    let cookie_result = match headers.typed_try_get::<Cookie>() {
+        Ok(Some(value)) => TypedHeader(value),
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    let session_cookie = &cookie_result
+        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
+        .expect("Unable to fetch session cookie!");
+
+    //let bytes = Bytes::from_request(&mut req_parts).await.unwrap();
+    let body = if let Some(value) = body_taken {
+        value
+    } else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .unwrap();
+    };
+
+    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+
+    let body_value = match serde_urlencoded::from_bytes::<Input>(&body_bytes) {
+        Ok(value) => value,
         Err(err) => {
             crate::utils::tracing_error(
                 std::panic::Location::caller(),
-                format!("Error during Session update: {:?}", err),
+                format!("Error: Unable to deserialize request body {:?}", err),
             )
             .await;
+
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
         }
-    }
+    };
+
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!("handle_form: Body {:?}", body_value),
+    )
+    .await;
+
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!(
+            "handle_form: got session cookie from user agent, {:?}={:?}",
+            crate::session::AXUM_SESSION_COOKIE_NAME,
+            &session_cookie
+        ),
+    )
+    .await;
+
+    // Use `session_cookie` to load the session
+    let session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
+        Ok(value) => match value {
+            Some(session_value) => session_value,
+            None => {
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::empty())
+                    .unwrap()
+            }
+        },
+        Err(err) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()
+        }
+    };
 
     // Redirect::to("/".parse().unwrap())
     let mut response = Response::builder()

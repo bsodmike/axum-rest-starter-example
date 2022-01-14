@@ -173,7 +173,7 @@ mod tests {
     use std::time::Duration;
 
     async fn test_store() -> RedisSessionStore {
-        let store = RedisSessionStore::new("redis://127.0.0.1").unwrap();
+        let store = RedisSessionStore::new("redis://127.0.0.1:6400/3").unwrap();
         store.clear_store().await.unwrap();
         store
     }
@@ -304,7 +304,7 @@ mod tests {
     async fn prefixes() -> Result {
         test_store().await; // clear the db
 
-        let store = RedisSessionStore::new("redis://127.0.0.1")?.with_prefix("sessions/");
+        let store = RedisSessionStore::new("redis://127.0.0.1:6400/4")?.with_prefix("sessions/");
         store.clear_store().await?;
 
         for _ in 0..3i8 {
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(4, store.count().await.unwrap());
 
         let other_store =
-            RedisSessionStore::new("redis://127.0.0.1")?.with_prefix("other-namespace/");
+            RedisSessionStore::new("redis://127.0.0.1:6400/5")?.with_prefix("other-namespace/");
 
         assert_eq!(0, other_store.count().await.unwrap());
         for _ in 0..3i8 {
