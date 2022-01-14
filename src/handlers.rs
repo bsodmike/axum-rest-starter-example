@@ -25,6 +25,7 @@ use crate::{
     errors::CustomError,
     session::{Session, AXUM_USER_UUID},
 };
+use std::fmt::{self, Display};
 
 pub async fn privacy_policy_handler() {}
 
@@ -68,30 +69,39 @@ pub struct Input {
     email: String,
 }
 
+impl fmt::Display for Input {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{{}, {}}}", self.name, self.email)
+    }
+}
+
 pub async fn accept_form(
     Form(input): Form<Input>,
     session: crate::session::Session,
     headers: HeaderMap,
     state: Extension<crate::AppState>,
 ) -> impl IntoResponse {
-    dbg!(&input);
-    //dbg!(&headers);
-    //dbg!(headers.get(crate::session::AXUM_USER_UUID));
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!("Form input: {:?}", &input),
+    )
+    .await;
 
-    //let header: &HeaderValue = if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
-    //    value
-    //} else {
-    //    tracing::error!("Session UUID missing!");
+    let name = input.name.to_owned();
+    let name_str = &name[..];
 
-    //    return Response::builder()
-    //        .status(StatusCode::BAD_REQUEST)
-    //        .body(Body::empty())
-    //        .unwrap();
-    //};
-
-    match save_form(&input, &session, &headers, &state).await {
+    match session
+        .update(&headers, &state.redis_session_client, &name_str)
+        .await
+    {
         Ok(_) => (),
-        Err(e) => tracing::error!("Failed: {:?}", e),
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error during Session update: {:?}", err),
+            )
+            .await;
+        }
     }
 
     // Redirect::to("/".parse().unwrap())
@@ -104,30 +114,6 @@ pub async fn accept_form(
     headers.insert(LOCATION, "/".parse().unwrap());
 
     response
-}
-
-pub async fn save_form(
-    input: &Input,
-    session: &Session,
-    headers: &HeaderMap,
-    state: &Extension<crate::AppState>,
-) -> redis::RedisResult<()> {
-    let name = input.name.to_owned();
-    let name_str = &name[..];
-
-    session
-        .update(headers, &state.redis_session_client, &name_str)
-        .await;
-
-    //let client = &state.redis_session_client;
-    //let mut con = client.get_async_connection().await?;
-
-    //let uuid = user_uuid.to_str().unwrap();
-    //con.set(uuid, name_str).await?;
-    //let result: String = con.get(uuid).await?;
-    //println!("->> User UUID: {}\n", result);
-
-    Ok(())
 }
 
 pub async fn handler_404(_method: Method, _uri: Uri) -> impl IntoResponse {

@@ -38,6 +38,7 @@ pub mod errors;
 pub mod handlers;
 pub mod middleware;
 pub mod session;
+pub mod utils;
 pub mod wrappers;
 
 use crate::errors::{ApiResult, CustomError};
