@@ -180,12 +180,12 @@ impl Session {
         headers: &HeaderMap,
         client: &redis::Client,
         name: &str,
-    ) -> Result<(), errors::Error> {
+    ) -> Result<(), errors::CustomError> {
         let user_uuid: &HeaderValue =
             if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
                 value
             } else {
-                return Err(errors::Error::NotImplementedError);
+                return Err(errors::CustomError::NotImplementedError);
             };
 
         let mut con = client
@@ -196,7 +196,7 @@ impl Session {
         let _ = if let Ok(val) = con.set::<&str, &str, String>(uuid, name).await {
             val
         } else {
-            return Err(errors::Error::RedisSetError);
+            return Err(errors::CustomError::RedisSetError);
         };
 
         let result: String = con.get(uuid).await.unwrap();

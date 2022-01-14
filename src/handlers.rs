@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    errors::Error,
+    errors::CustomError,
     session::{Session, AXUM_USER_UUID},
 };
 

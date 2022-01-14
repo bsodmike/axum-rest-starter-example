@@ -40,7 +40,7 @@ pub mod middleware;
 pub mod session;
 pub mod wrappers;
 
-use crate::errors::{ApiResult, Error};
+use crate::errors::{ApiResult, CustomError};
 
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     let mut glob_path = "conf/development/*";
