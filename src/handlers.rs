@@ -8,8 +8,11 @@ use axum::{
         TypedHeader,
     },
     handler::Handler,
-    headers::Cookie,
-    http::{self, header::LOCATION, HeaderMap, HeaderValue, Method, Request, StatusCode, Uri},
+    headers::{Cookie, Header, HeaderMapExt},
+    http::{
+        self, header::HeaderName, header::LOCATION, HeaderMap, HeaderValue, Method, Request,
+        StatusCode, Uri,
+    },
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post, Router},
     AddExtensionLayer, Json,
@@ -17,6 +20,12 @@ use axum::{
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::{
+    errors::CustomError,
+    session::{Session, AXUM_USER_UUID},
+};
+use std::fmt::{self, Display};
 
 pub async fn privacy_policy_handler() {}
 
@@ -47,8 +56,8 @@ where
     }
 }
 
-pub async fn show_form(session_user: crate::session::UserFromSession) -> impl IntoResponse {
-    let uuid = session_user.uuid;
+pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
+    let uuid = session.uuid;
     let template = IndexTemplate { uuid };
     HtmlTemplate(template)
 }
@@ -60,34 +69,53 @@ pub struct Input {
     email: String,
 }
 
-pub async fn accept_form(Form(input): Form<Input>, state: Extension<crate::AppState>) -> Redirect {
-    dbg!(&input);
-
-    match save_form(&input, &state).await {
-        Ok(_) => (),
-        Err(e) => tracing::error!("Failed: {:?}", e),
+impl fmt::Display for Input {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{{}, {}}}", self.name, self.email)
     }
-
-    Redirect::to("/".parse().unwrap())
 }
 
-pub async fn save_form(
-    input: &Input,
-    state: &Extension<crate::AppState>,
-) -> redis::RedisResult<()> {
-    let client = &state.redis_client;
-    let mut con = client.get_async_connection().await?;
+pub async fn accept_form(
+    Form(input): Form<Input>,
+    session: crate::session::Session,
+    headers: HeaderMap,
+    state: Extension<crate::AppState>,
+) -> impl IntoResponse {
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!("Form input: {:?}", &input),
+    )
+    .await;
 
     let name = input.name.to_owned();
     let name_str = &name[..];
 
-    con.set("async-key1", name_str).await?;
-    let result: String = con.get("async-key1").await?;
-    println!("->> my_key: {}\n", result);
+    match session
+        .update(&headers, &state.redis_session_client, &name_str)
+        .await
+    {
+        Ok(_) => (),
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error during Session update: {:?}", err),
+            )
+            .await;
+        }
+    }
 
-    Ok(())
+    // Redirect::to("/".parse().unwrap())
+    let mut response = Response::builder()
+        .status(StatusCode::SEE_OTHER)
+        .body(Body::empty())
+        .unwrap();
+
+    let headers = response.headers_mut();
+    headers.insert(LOCATION, "/".parse().unwrap());
+
+    response
 }
 
-pub async fn handler_404(method: Method, uri: Uri) -> impl IntoResponse {
+pub async fn handler_404(_method: Method, _uri: Uri) -> impl IntoResponse {
     StatusCode::NOT_FOUND
 }

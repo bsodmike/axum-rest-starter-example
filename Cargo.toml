@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
+thiserror = "1.0"
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.4", features = ["headers"] }
 axum-extra = "0.1.1"
@@ -25,3 +26,6 @@ hyper = { version = "0.14", features = ["full"] }
 async-session = "3.0.0"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 askama = "0.10"
+rand = "0.8.4"
+base64 = "0.13.0"
+

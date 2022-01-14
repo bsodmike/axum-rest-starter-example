@@ -19,10 +19,10 @@ pub async fn print_request_info_middleware(
     dbg!(&parts);
     let req = Request::from_parts(parts, Body::from(bytes));
 
-    let mut res = next.run(req).await;
+    let res = next.run(req).await;
 
-    let headers = res.headers_mut();
-    dbg!(headers);
+    //let headers = res.headers_mut();
+    //dbg!(headers);
 
     let (parts, body) = res.into_parts();
 

@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use session::session_uuid_middleware;
 use std::convert::Infallible;
-use std::env;
 use std::net::SocketAddr;
+use std::{collections::HashMap, env};
 use tower::{
     filter::AsyncFilterLayer, limit::ConcurrencyLimitLayer, util::AndThenLayer, BoxError,
     ServiceBuilder,
@@ -38,9 +38,10 @@ pub mod errors;
 pub mod handlers;
 pub mod middleware;
 pub mod session;
+pub mod utils;
 pub mod wrappers;
 
-use crate::errors::{ApiResult, Error};
+use crate::errors::{ApiResult, CustomError};
 
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     let mut glob_path = "conf/development/*";
@@ -69,7 +70,8 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 
 #[derive(Clone)]
 pub struct AppState {
-    redis_client: redis::Client,
+    redis_session_client: redis::Client,
+    redis_cookie_client: redis::Client,
 }
 
 #[tokio::main]
@@ -83,14 +85,28 @@ async fn main() {
     // `MemoryStore` just used as an example. Don't use this in production.
     let store = MemoryStore::new();
 
+    let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
+        .expect("Redis Session DB configuration missing!");
+    let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
+        .expect("Redis Cookie DB configuration missing!");
+
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(AppState {
-            redis_client: crate::wrappers::redis_wrapper::connect().await,
+            redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+                "db",
+                redis_session_db,
+            )]))
+            .await,
+            redis_cookie_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+                "db",
+                redis_cookie_db,
+            )]))
+            .await,
         }))
-        .layer(axum_extra::middleware::from_fn(
-            crate::middleware::debugging::print_request_info_middleware,
-        ))
+        //.layer(axum_extra::middleware::from_fn(
+        //    crate::middleware::debugging::print_request_info_middleware,
+        //))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
             session::session_uuid_middleware,
