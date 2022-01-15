@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::{errors, AppState};
 
-pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
-pub const AXUM_USER_UUID: &str = "axum-user-uuid";
+pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
+pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
 pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
     let app_state = req
@@ -71,18 +71,22 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         let new_uuid = user_id.0.to_hyphenated().to_string();
         let mut session = AsyncSession::new();
 
-        //let cookie = session.insert("id", new_uuid).map_err(|err| {
-        //    // ...
-        //    StatusCode::INTERNAL_SERVER_ERROR
-        //})?;
-
-        dbg!(&new_uuid);
-        match session.insert("id", &new_uuid) {
-            Ok(_) => (),
+        /*
+         * Initialise a new user instance with new UUID
+         */
+        match session.insert(
+            "user",
+            User {
+                uuid: Uuid::new_v4().to_string(),
+                name: String::from(""),
+                email: String::from(""),
+            },
+        ) {
+            Ok(value) => value,
             Err(err) => {
                 crate::utils::tracing_error(
                     std::panic::Location::caller(),
-                    format!("Error: {:?}", err),
+                    format!("Error: Unable to update session with user {:?}", err),
                 )
                 .await;
 
@@ -177,10 +181,19 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
-    let fetched_uuid = match session.get::<String>("id") {
+    let fetched_user = match session.get::<User>("user") {
         Some(val) => val,
-        None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        None => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Unable to fetch user from session!"),
+            )
+            .await;
+
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
     };
+    let fetched_uuid = fetched_user.uuid;
 
     let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
         user_id
@@ -190,8 +203,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
 
     let request_headers = req.headers_mut();
     request_headers.insert(
-        AXUM_USER_UUID,
-        HeaderValue::from_str(format!("{}", UserId::from(user_id).0).as_str()).unwrap(),
+        AXUM_SESSION_ID,
+        HeaderValue::from_str(format!("{}", &session.id()).as_str()).unwrap(),
     );
 
     /*
@@ -201,8 +214,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
 
     let mut _headers = res.headers_mut();
     headers_copy.insert(
-        AXUM_USER_UUID,
-        HeaderValue::from_str(format!("{}", UserId::from(user_id).0).as_str()).unwrap(),
+        AXUM_SESSION_ID,
+        HeaderValue::from_str(format!("{}", session.id()).as_str()).unwrap(),
     );
     _headers = &mut headers_copy;
 
@@ -214,6 +227,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct User {
+    pub uuid: String,
     pub name: String,
     pub email: String,
 }
@@ -222,7 +236,7 @@ pub struct User {
 pub struct UserId(pub Uuid);
 
 impl UserId {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 
@@ -244,7 +258,7 @@ impl Session {
         name: &str,
     ) -> Result<(), errors::CustomError> {
         let user_uuid: &HeaderValue =
-            if let Some(value) = headers.get(crate::session::AXUM_USER_UUID) {
+            if let Some(value) = headers.get(crate::session::AXUM_SESSION_ID) {
                 value
             } else {
                 return Err(errors::CustomError::NotImplementedError);
@@ -317,10 +331,19 @@ where
             Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
         };
 
-        let fetched_uuid = match session.get::<String>("id") {
+        let fetched_user = match session.get::<User>("user") {
             Some(val) => val,
-            None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            None => {
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!("Unable to fetch user from session!"),
+                )
+                .await;
+
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         };
+        let fetched_uuid = fetched_user.uuid;
 
         let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
             user_id

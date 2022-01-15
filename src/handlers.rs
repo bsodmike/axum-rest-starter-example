@@ -23,10 +23,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::{
-    errors::CustomError,
-    session::{Session, AXUM_USER_UUID},
-};
+use crate::{errors::CustomError, session::Session};
 use std::fmt::{self, Display};
 
 pub async fn privacy_policy_handler() {}
@@ -59,6 +56,7 @@ where
 }
 
 pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
+    dbg!(session);
     let uuid = session.uuid;
     let template = IndexTemplate { uuid };
     HtmlTemplate(template)
@@ -176,10 +174,13 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     };
 
     session.set_cookie_value(session_cookie.to_string());
+    let user_id = crate::session::UserId::new();
+    let new_uuid = user_id.0.to_hyphenated().to_string();
 
     match session.insert(
         "user",
         crate::session::User {
+            uuid: new_uuid,
             name: body_value.name,
             email: "".to_string(),
         },
