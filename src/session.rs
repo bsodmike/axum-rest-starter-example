@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::{errors, wrappers::redis_store::RedisStore, AppState};
+use crate::{errors, AppState};
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_USER_UUID: &str = "axum-user-uuid";
@@ -98,7 +98,6 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             Ok(value) => match value {
                 Some(cookie_value) => cookie_value,
                 None => {
-                    dbg!(value);
                     crate::utils::tracing_error(
                         std::panic::Location::caller(),
                         format!("Unable to fetch cookie value from new session!"),
@@ -108,7 +107,15 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             },
-            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            Err(err) => {
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!("Error whilst attempting to update store {:?}", err),
+                )
+                .await;
+
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         };
 
         crate::utils::tracing_debug(
@@ -203,6 +210,12 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     dbg!(&_headers);
 
     Ok(res)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct User {
+    pub name: String,
+    pub email: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

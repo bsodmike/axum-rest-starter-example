@@ -22,7 +22,6 @@ use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serde_urlencoded;
 
 use crate::{
     errors::CustomError,
@@ -67,12 +66,12 @@ pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
 
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
-pub struct Input {
+pub struct FormFields {
     name: String,
     email: String,
 }
 
-impl fmt::Display for Input {
+impl fmt::Display for FormFields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{{}, {}}}", self.name, self.email)
     }
@@ -125,8 +124,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     };
 
     let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-
-    let body_value = match serde_urlencoded::from_bytes::<Input>(&body_bytes) {
+    let body_value = match serde_urlencoded::from_bytes::<FormFields>(&body_bytes) {
         Ok(value) => value,
         Err(err) => {
             crate::utils::tracing_error(
@@ -159,7 +157,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     .await;
 
     // Use `session_cookie` to load the session
-    let session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
+    let mut session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
         Ok(value) => match value {
             Some(session_value) => session_value,
             None => {
@@ -174,6 +172,68 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::empty())
                 .unwrap()
+        }
+    };
+
+    session.set_cookie_value(session_cookie.to_string());
+
+    match session.insert(
+        "user",
+        crate::session::User {
+            name: body_value.name,
+            email: "".to_string(),
+        },
+    ) {
+        Ok(value) => value,
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error: Unable to update session with user {:?}", err),
+            )
+            .await;
+
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    let _: String = match store.store_session(session).await {
+        Ok(value) => match value {
+            Some(cookie_value) => {
+                crate::utils::tracing_debug(
+                    std::panic::Location::caller(),
+                    format!(
+                        "Store updated OK / Cookie value returned {:?}",
+                        cookie_value
+                    ),
+                )
+                .await;
+
+                cookie_value
+            }
+            None => {
+                crate::utils::tracing_debug(
+                    std::panic::Location::caller(),
+                    format!("Store updated OK / No cookie value returned"),
+                )
+                .await;
+
+                String::from("")
+            }
+        },
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error whilst attempting to update store {:?}", err),
+            )
+            .await;
+
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
         }
     };
 
