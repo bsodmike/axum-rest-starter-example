@@ -169,26 +169,6 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
-    let fetched_user = match session.get::<User>("user") {
-        Some(val) => val,
-        None => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Unable to fetch user from session!"),
-            )
-            .await;
-
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-    let fetched_uuid = fetched_user.uuid;
-
-    let user_id = if let Ok(user_id) = uuid::Uuid::parse_str(&fetched_uuid) {
-        user_id
-    } else {
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
-    };
-
     let request_headers = req.headers_mut();
     request_headers.insert(
         AXUM_SESSION_ID,
@@ -305,7 +285,7 @@ where
     };
 
     let body_bytes = hyper::body::to_bytes(body).await?;
-    let body_value = match serde_urlencoded::from_bytes::<T>(&body_bytes) {
+    let body_deserialized = match serde_urlencoded::from_bytes::<T>(&body_bytes) {
         Ok(value) => value,
         Err(err) => {
             crate::utils::tracing_error(
@@ -318,11 +298,10 @@ where
         }
     };
 
-    Ok(body_value)
+    Ok(body_deserialized)
 }
 
-pub async fn session_update<T>(
-    body_content: T,
+pub async fn session_update(
     headers: &HeaderMap,
     store: &RedisSessionStore,
     user: &User,

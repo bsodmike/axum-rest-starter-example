@@ -75,11 +75,11 @@ pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl In
 
 pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     let mut req_parts = RequestParts::new(req);
-    let body_taken = req_parts.take_body();
+    let body = req_parts.take_body();
 
     //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
     //fetch the body data as bytes
-    let body_value = match crate::session::body_content::<FormFields>(body_taken).await {
+    let body_deserialized = match crate::session::body_content::<FormFields>(body).await {
         Ok(value) => value,
         _ => {
             return Response::builder()
@@ -90,7 +90,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     };
     crate::utils::tracing_debug(
         std::panic::Location::caller(),
-        format!("handle_form: Body {:?}", body_value),
+        format!("handle_form: Body {:?}", body_deserialized),
     )
     .await;
 
@@ -115,15 +115,13 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     let new_uuid = user_id.0.to_hyphenated().to_string();
     let user_data = crate::session::User {
         uuid: new_uuid,
-        name: body_value.name.clone(),
-        email: body_value.email.clone(),
+        name: body_deserialized.name.clone(),
+        email: body_deserialized.email.clone(),
     };
 
-    /*
-     */
-
-    match crate::session::session_update(&body_value, headers, &store, &user_data).await {
-        Ok(value) => {}
+    // Update store
+    match crate::session::session_update(headers, &store, &user_data).await {
+        Ok(_) => {}
         _ => {
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
