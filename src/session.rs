@@ -157,6 +157,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         &session_cookie.unwrap()
     );
 
+    let session_cookie_clone = session_cookie.clone();
     // continue to decode session, fetch UUID from Redis
     let session: AsyncSession = match store
         .load_session(session_cookie.unwrap().to_string())
@@ -164,7 +165,22 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     {
         Ok(value) => match value {
             Some(session_value) => session_value,
-            None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+            None => {
+                /*
+                 * FIXME: ideally, we should generate a new session and redirect the user to the
+                 * path they've requested.
+                 */
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!(
+                        "Error! Unable to locate session in backend! Cookie: {:?}",
+                        session_cookie_clone
+                    ),
+                )
+                .await;
+
+                return Err(StatusCode::BAD_REQUEST);
+            }
         },
         Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
