@@ -1,3 +1,4 @@
+use crate::{errors::CustomError, session::UserExtractor};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
 use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
@@ -22,8 +23,6 @@ use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-
-use crate::{errors::CustomError, session::Session};
 use std::fmt::{self, Display};
 
 pub async fn privacy_policy_handler() {}
@@ -32,7 +31,7 @@ pub async fn privacy_policy_handler() {}
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    uuid: uuid::Uuid,
+    uuid: String,
 }
 
 struct HtmlTemplate<T>(T);
@@ -55,9 +54,8 @@ where
     }
 }
 
-pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
-    dbg!(session);
-    let uuid = session.uuid;
+pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl IntoResponse {
+    let uuid = user_extractor.0.uuid;
     let template = IndexTemplate { uuid };
     HtmlTemplate(template)
 }

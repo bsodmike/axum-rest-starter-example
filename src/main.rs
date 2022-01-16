@@ -70,6 +70,7 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 });
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AppState {
     redis_session_client: redis::Client,
 }
