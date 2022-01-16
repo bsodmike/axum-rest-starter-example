@@ -82,10 +82,8 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         .get::<RedisSessionStore>()
         .expect("`RedisSessionStore` extension missing!");
 
-    //let cookie = Option::<TypedHeader<Cookie>>::from_request(&mut req_parts)
-    //    .await
-    //    .unwrap();
-
+    //Implement the same approach as `TypedHeader<Cookie>::from_request` without causing an
+    //immutable borrow on the request.
     let headers = if let Some(value) = req_parts.headers() {
         value
     } else {
@@ -109,7 +107,8 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         .get(crate::session::AXUM_SESSION_COOKIE_NAME)
         .expect("Unable to fetch session cookie!");
 
-    //let bytes = Bytes::from_request(&mut req_parts).await.unwrap();
+    //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
+    //fetch the body data as bytes
     let body = if let Some(value) = body_taken {
         value
     } else {
@@ -180,7 +179,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         crate::session::User {
             uuid: new_uuid,
             name: body_value.name,
-            email: "".to_string(),
+            email: body_value.email,
         },
     ) {
         Ok(value) => value,
