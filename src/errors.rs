@@ -13,9 +13,17 @@ pub enum CustomError {
     RedisSetError,
     #[error("Configuration secret missing!")]
     ConfigurationSecretMissing,
+    #[error("hyper Error!")]
+    HyperError,
     #[error("NotImplementedError")]
     NotImplementedError,
 }
 
 pub type ApiError = (StatusCode, Json<Value>);
 pub type ApiResult<T> = std::result::Result<T, ApiError>;
+
+impl From<hyper::Error> for CustomError {
+    fn from(err: hyper::Error) -> CustomError {
+        CustomError::HyperError
+    }
+}

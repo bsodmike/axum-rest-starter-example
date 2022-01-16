@@ -21,7 +21,7 @@ use axum::{
 };
 use hyper::body::Buf;
 use redis::AsyncCommands;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_json::json;
 use std::fmt::{self, Display};
 
@@ -54,12 +54,6 @@ where
     }
 }
 
-pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl IntoResponse {
-    let uuid = user_extractor.0.uuid;
-    let template = IndexTemplate { uuid };
-    HtmlTemplate(template)
-}
-
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
 pub struct FormFields {
@@ -73,9 +67,33 @@ impl fmt::Display for FormFields {
     }
 }
 
+pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl IntoResponse {
+    let uuid = user_extractor.0.uuid;
+    let template = IndexTemplate { uuid };
+    HtmlTemplate(template)
+}
+
 pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     let mut req_parts = RequestParts::new(req);
     let body_taken = req_parts.take_body();
+
+    //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
+    //fetch the body data as bytes
+    let body_value = match crate::session::body_content::<FormFields>(body_taken).await {
+        Ok(value) => value,
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!("handle_form: Body {:?}", body_value),
+    )
+    .await;
+
     let store = &mut req_parts
         .extensions()
         .unwrap()
@@ -93,147 +111,26 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
             .unwrap();
     };
 
-    let cookie_result = match headers.typed_try_get::<Cookie>() {
-        Ok(Some(value)) => TypedHeader(value),
+    let user_id = crate::session::UserId::new();
+    let new_uuid = user_id.0.to_hyphenated().to_string();
+    let user_data = crate::session::User {
+        uuid: new_uuid,
+        name: body_value.name.clone(),
+        email: body_value.email.clone(),
+    };
+
+    /*
+     */
+
+    match crate::session::session_update(&body_value, headers, &store, &user_data).await {
+        Ok(value) => {}
         _ => {
             return Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(Body::empty())
                 .unwrap();
         }
-    };
-
-    let session_cookie = &cookie_result
-        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
-        .expect("Unable to fetch session cookie!");
-
-    //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
-    //fetch the body data as bytes
-    let body = if let Some(value) = body_taken {
-        value
-    } else {
-        return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::empty())
-            .unwrap();
-    };
-
-    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-    let body_value = match serde_urlencoded::from_bytes::<FormFields>(&body_bytes) {
-        Ok(value) => value,
-        Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error: Unable to deserialize request body {:?}", err),
-            )
-            .await;
-
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
-        }
-    };
-
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!("handle_form: Body {:?}", body_value),
-    )
-    .await;
-
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!(
-            "handle_form: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
-            &session_cookie
-        ),
-    )
-    .await;
-
-    // Use `session_cookie` to load the session
-    let mut session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
-        Ok(value) => match value {
-            Some(session_value) => session_value,
-            None => {
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::empty())
-                    .unwrap()
-            }
-        },
-        Err(err) => {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()
-        }
-    };
-
-    session.set_cookie_value(session_cookie.to_string());
-    let user_id = crate::session::UserId::new();
-    let new_uuid = user_id.0.to_hyphenated().to_string();
-
-    match session.insert(
-        "user",
-        crate::session::User {
-            uuid: new_uuid,
-            name: body_value.name,
-            email: body_value.email,
-        },
-    ) {
-        Ok(value) => value,
-        Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error: Unable to update session with user {:?}", err),
-            )
-            .await;
-
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
-        }
-    };
-
-    let _: String = match store.store_session(session).await {
-        Ok(value) => match value {
-            Some(cookie_value) => {
-                crate::utils::tracing_debug(
-                    std::panic::Location::caller(),
-                    format!(
-                        "Store updated OK / Cookie value returned {:?}",
-                        cookie_value
-                    ),
-                )
-                .await;
-
-                cookie_value
-            }
-            None => {
-                crate::utils::tracing_debug(
-                    std::panic::Location::caller(),
-                    format!("Store updated OK / No cookie value returned"),
-                )
-                .await;
-
-                String::from("")
-            }
-        },
-        Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error whilst attempting to update store {:?}", err),
-            )
-            .await;
-
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap();
-        }
-    };
+    }
 
     // Redirect::to("/".parse().unwrap())
     let mut response = Response::builder()

@@ -1,3 +1,4 @@
+use crate::{errors, errors::CustomError, AppState};
 use async_redis_session::RedisSessionStore;
 use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
 use axum::{
@@ -17,11 +18,9 @@ use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;
 use redis::Client;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
-
-use crate::{errors, AppState};
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
@@ -293,4 +292,129 @@ where
 
         Ok(Self(fetched_user))
     }
+}
+
+pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, CustomError>
+where
+    T: de::DeserializeOwned,
+{
+    let body = if let Some(value) = body_taken {
+        value
+    } else {
+        return Err(CustomError::NotImplementedError);
+    };
+
+    let body_bytes = hyper::body::to_bytes(body).await?;
+    let body_value = match serde_urlencoded::from_bytes::<T>(&body_bytes) {
+        Ok(value) => value,
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error: Unable to deserialize request body {:?}", err),
+            )
+            .await;
+
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    Ok(body_value)
+}
+
+pub async fn session_update<T>(
+    body_content: T,
+    headers: &HeaderMap,
+    store: &RedisSessionStore,
+    user: &User,
+) -> Result<(), CustomError> {
+    let cookie_result = match headers.typed_try_get::<Cookie>() {
+        Ok(Some(value)) => TypedHeader(value),
+        _ => {
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    let session_cookie = &cookie_result
+        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
+        .expect("Unable to fetch session cookie!");
+
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!(
+            "handle_form: got session cookie from user agent, {:?}={:?}",
+            crate::session::AXUM_SESSION_COOKIE_NAME,
+            &session_cookie
+        ),
+    )
+    .await;
+
+    // Use `session_cookie` to load the session
+    let mut session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
+        Ok(value) => match value {
+            Some(session_value) => session_value,
+            None => {
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!("Error: Unable to load session!"),
+                )
+                .await;
+                return Err(CustomError::NotImplementedError);
+            }
+        },
+        Err(err) => {
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    session.set_cookie_value(session_cookie.to_string());
+
+    match session.insert("user", user) {
+        Ok(value) => value,
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error: Unable to update session with user {:?}", err),
+            )
+            .await;
+
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    let _: String = match store.store_session(session).await {
+        Ok(value) => match value {
+            Some(cookie_value) => {
+                crate::utils::tracing_debug(
+                    std::panic::Location::caller(),
+                    format!(
+                        "Store updated OK / Cookie value returned {:?}",
+                        cookie_value
+                    ),
+                )
+                .await;
+
+                cookie_value
+            }
+            None => {
+                crate::utils::tracing_debug(
+                    std::panic::Location::caller(),
+                    format!("Store updated OK / No cookie value returned"),
+                )
+                .await;
+
+                String::from("")
+            }
+        },
+        Err(err) => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Error whilst attempting to update store {:?}", err),
+            )
+            .await;
+
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    Ok(())
 }
