@@ -85,8 +85,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
         .expect("Redis Session DB configuration missing!");
-    //let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
-    //    .expect("Redis Cookie DB configuration missing!");
 
     let session_client =
         crate::wrappers::redis_wrapper::connect(HashMap::from([("db", redis_session_db.clone())]))
@@ -103,9 +101,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(app_state))
-        //.layer(axum_extra::middleware::from_fn(
-        //    crate::middleware::debugging::print_request_info_middleware,
-        //))
+        .layer(axum_extra::middleware::from_fn(
+            crate::middleware::debugging::print_request_info_middleware,
+        ))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
             session::session_uuid_middleware,

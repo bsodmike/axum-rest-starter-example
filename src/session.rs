@@ -19,7 +19,7 @@ use rand::RngCore;
 use redis::AsyncCommands;
 use redis::Client;
 use serde::{de, Deserialize, Serialize};
-use std::str::FromStr;
+use std::{fmt::format, str::FromStr};
 use uuid::Uuid;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
@@ -133,15 +133,30 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             .body(_body)
             .unwrap();
 
-        let cookie_value =
-            HeaderValue::from_str(format!("{}={}", AXUM_SESSION_COOKIE_NAME, cookie).as_str())
-                .unwrap();
         let headers = res.headers_mut();
         headers.insert(
             http::header::LOCATION,
             req.uri().to_string().parse().unwrap(),
         );
-        headers.insert(http::header::SET_COOKIE, cookie_value);
+
+        let domain: String =
+            crate::configure::fetch::<String>(String::from("domain")).unwrap_or_default();
+        if domain.as_str() == "" {
+            panic!(
+                "App domain is missing {:?}",
+                CustomError::ConfigurationSecretMissing
+            )
+        };
+
+        let set_cookie = HeaderValue::from_str(
+            format!(
+                "{}={}; Secure; HttpOnly; Path=/; Domain={}",
+                AXUM_SESSION_COOKIE_NAME, cookie, domain
+            )
+            .as_str(),
+        )
+        .unwrap();
+        headers.insert(http::header::SET_COOKIE, set_cookie);
 
         // It is also possible to call `let res = res.map(axum::body::boxed)`
         // to correct the response type.

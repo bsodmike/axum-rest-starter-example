@@ -21,8 +21,8 @@ pub async fn print_request_info_middleware(
 
     let res = next.run(req).await;
 
-    //let headers = res.headers_mut();
-    //dbg!(headers);
+    let headers = res.headers();
+    dbg!(headers);
 
     let (parts, body) = res.into_parts();
 

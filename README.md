@@ -8,6 +8,7 @@
 
 ```
 ---
+domain: localhost
 redis_host_name: "127.0.0.1"
 redis_password: replaceme
 redis_session_db: 0
