@@ -53,10 +53,11 @@ impl fmt::Debug for Error {
     }
 }
 
+#[allow(clippy::to_string_in_display)]
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(ref cause) = self.inner.cause {
-            write!(f, "{}: {}", self.to_string(), cause)
+            write!(f, "{}: {}", self, cause)
         } else {
             f.write_str(&self.to_string())
         }
