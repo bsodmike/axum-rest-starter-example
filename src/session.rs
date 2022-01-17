@@ -21,6 +21,7 @@ use redis::AsyncCommands;
 use redis::Client;
 use serde::{de, Deserialize, Serialize};
 use std::{fmt::format, str::FromStr};
+use tracing::Instrument;
 use uuid::Uuid;
 
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";

@@ -82,7 +82,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
     }
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
 
     let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
         .expect("Redis Session DB configuration missing!");
