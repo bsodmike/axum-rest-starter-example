@@ -1,6 +1,6 @@
 use crate::{errors, errors::CustomError, AppState};
 use async_redis_session::RedisSessionStore;
-use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
+use async_session::{log::kv::ToValue, MemoryStore, Session, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -57,7 +57,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     if session_cookie.is_none() {
         let user_id = UserId::new();
         let new_uuid = user_id.0.to_hyphenated().to_string();
-        let mut session = AsyncSession::new();
+        let mut session = Session::new();
 
         /*
          * Initialise a new user instance with new UUID
@@ -174,7 +174,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
 
     let session_cookie_clone = session_cookie.clone();
     // continue to decode session, fetch UUID from Redis
-    let session: AsyncSession = match store
+    let session: Session = match store
         .load_session(session_cookie.unwrap().to_string())
         .await
     {
@@ -272,7 +272,7 @@ where
     Ok(body_deserialized)
 }
 
-pub async fn session_update(
+pub async fn update(
     headers: &HeaderMap,
     store: &RedisSessionStore,
     user: &User,
@@ -299,7 +299,7 @@ pub async fn session_update(
     .await;
 
     // Use `session_cookie` to load the session
-    let mut session: AsyncSession = match store.load_session(session_cookie.to_string()).await {
+    let mut session: Session = match store.load_session(session_cookie.to_string()).await {
         Ok(value) => match value {
             Some(session_value) => session_value,
             None => {
@@ -367,4 +367,67 @@ pub async fn session_update(
     };
 
     Ok(())
+}
+
+pub async fn fetch<T>(
+    headers: &HeaderMap,
+    store: &RedisSessionStore,
+    key: &str,
+) -> Result<T, CustomError>
+where
+    T: de::DeserializeOwned,
+{
+    let cookie_result = match headers.typed_try_get::<Cookie>() {
+        Ok(Some(value)) => TypedHeader(value),
+        _ => {
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    let session_cookie = &cookie_result
+        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
+        .expect("Unable to fetch session cookie!");
+
+    crate::utils::tracing_debug(
+        std::panic::Location::caller(),
+        format!(
+            "handle_form: got session cookie from user agent, {:?}={:?}",
+            crate::session::AXUM_SESSION_COOKIE_NAME,
+            &session_cookie
+        ),
+    )
+    .await;
+
+    // Use `session_cookie` to load the session
+    let session: Session = match store.load_session(session_cookie.to_string()).await {
+        Ok(value) => match value {
+            Some(session_value) => session_value,
+            None => {
+                crate::utils::tracing_error(
+                    std::panic::Location::caller(),
+                    format!("Error: Unable to load session!"),
+                )
+                .await;
+                return Err(CustomError::NotImplementedError);
+            }
+        },
+        Err(err) => {
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    let session_fetched: T = match session.get::<T>(key) {
+        Some(val) => val,
+        None => {
+            crate::utils::tracing_error(
+                std::panic::Location::caller(),
+                format!("Unable to fetch user from session!"),
+            )
+            .await;
+
+            return Err(CustomError::NotImplementedError);
+        }
+    };
+
+    Ok(session_fetched)
 }

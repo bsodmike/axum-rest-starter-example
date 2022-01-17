@@ -1,4 +1,4 @@
-use crate::{errors::CustomError, extractors::user_extractor};
+use crate::{errors::CustomError, extractors::user_extractor, session::User};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
 use axum::{
@@ -110,16 +110,25 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
             .unwrap();
     };
 
-    let user_id = crate::session::UserId::new();
-    let new_uuid = user_id.0.to_hyphenated().to_string();
+    // Fetch existing user from store
+    let user = match crate::session::fetch::<User>(headers, store, "user").await {
+        Ok(value) => value,
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
     let user_data = crate::session::User {
-        uuid: new_uuid,
+        uuid: user.uuid,
         name: body_deserialized.name.clone(),
         email: body_deserialized.email.clone(),
     };
 
     // Update store
-    match crate::session::session_update(headers, &store, &user_data).await {
+    match crate::session::update(headers, &store, &user_data).await {
         Ok(_) => {}
         _ => {
             return Response::builder()
