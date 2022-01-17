@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_redis_session::RedisSessionStore;
+use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
 use axum::{
     async_trait,
@@ -35,6 +36,7 @@ use tower_http::trace::TraceLayer;
 
 pub mod configure;
 pub mod errors;
+pub mod extractors;
 pub mod handlers;
 pub mod middleware;
 pub mod session;
@@ -69,44 +71,44 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 });
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AppState {
     redis_session_client: redis::Client,
-    redis_cookie_client: redis::Client,
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set the RUST_LOG, if it hasn't been explicitly defined
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
     }
-    tracing_subscriber::fmt::init();
-
-    // `MemoryStore` just used as an example. Don't use this in production.
-    let store = MemoryStore::new();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
 
     let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
         .expect("Redis Session DB configuration missing!");
-    let redis_cookie_db: String = configure::fetch::<String>(String::from("redis_cookie_db"))
-        .expect("Redis Cookie DB configuration missing!");
+
+    let session_client =
+        crate::wrappers::redis_wrapper::connect(HashMap::from([("db", redis_session_db.clone())]))
+            .await;
+    let app_state = AppState {
+        redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
+            "db",
+            redis_session_db,
+        )]))
+        .await,
+    };
+    let store = RedisSessionStore::from_client(session_client);
 
     let middleware_stack = ServiceBuilder::new()
         .layer(TraceLayer::new_for_http())
-        .layer(AddExtensionLayer::new(AppState {
-            redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
-                "db",
-                redis_session_db,
-            )]))
-            .await,
-            redis_cookie_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
-                "db",
-                redis_cookie_db,
-            )]))
-            .await,
-        }))
-        //.layer(axum_extra::middleware::from_fn(
-        //    crate::middleware::debugging::print_request_info_middleware,
-        //))
+        .layer(AddExtensionLayer::new(app_state))
+        .layer(axum_extra::middleware::from_fn(
+            crate::middleware::debugging::print_request_info_middleware,
+        ))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
             session::session_uuid_middleware,
@@ -114,7 +116,7 @@ async fn main() {
 
     // build our application with some routes
     let app = Router::new()
-        .route("/", get(handlers::show_form).post(handlers::accept_form))
+        .route("/", get(handlers::show_form).post(handlers::handle_form))
         .route("/privacy-policy", get(handlers::privacy_policy_handler))
         .layer(middleware_stack);
 
@@ -128,4 +130,6 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+
+    Ok(())
 }

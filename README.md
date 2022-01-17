@@ -10,10 +10,10 @@
 
 ```
 ---
+domain: localhost
 redis_host_name: "127.0.0.1"
 redis_password: replaceme
-redis_cookie_db: 0
-redis_session_db: 1
+redis_session_db: 0
 redis_port: 6400
 ```
 

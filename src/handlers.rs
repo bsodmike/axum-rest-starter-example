@@ -1,10 +1,11 @@
+use crate::{errors::CustomError, extractors::user_extractor, session::User};
 use askama::Template;
+use async_redis_session::RedisSessionStore;
 use axum::{
     async_trait,
-    body::{self, Body, BoxBody, Bytes, Full},
+    body::{self, Body, BoxBody, Bytes, Full, HttpBody},
     extract::{
-        extractor_middleware, rejection::TypedHeaderRejection,
-        rejection::TypedHeaderRejectionReason, Extension, Form, FromRequest, Path, RequestParts,
+        extractor_middleware, rejection::*, Extension, Form, FromRequest, Path, RequestParts,
         TypedHeader,
     },
     handler::Handler,
@@ -17,14 +18,10 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
+use hyper::body::Buf;
 use redis::AsyncCommands;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_json::json;
-
-use crate::{
-    errors::CustomError,
-    session::{Session, AXUM_USER_UUID},
-};
 use std::fmt::{self, Display};
 
 pub async fn privacy_policy_handler() {}
@@ -33,7 +30,7 @@ pub async fn privacy_policy_handler() {}
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    uuid: uuid::Uuid,
+    user: crate::session::User,
 }
 
 struct HtmlTemplate<T>(T);
@@ -56,51 +53,89 @@ where
     }
 }
 
-pub async fn show_form(session: crate::session::Session) -> impl IntoResponse {
-    let uuid = session.uuid;
-    let template = IndexTemplate { uuid };
-    HtmlTemplate(template)
-}
-
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
-pub struct Input {
+pub struct FormFields {
     name: String,
     email: String,
 }
 
-impl fmt::Display for Input {
+impl fmt::Display for FormFields {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{{}, {}}}", self.name, self.email)
     }
 }
 
-pub async fn accept_form(
-    Form(input): Form<Input>,
-    session: crate::session::Session,
-    headers: HeaderMap,
-    state: Extension<crate::AppState>,
-) -> impl IntoResponse {
+pub async fn show_form(user_extractor: user_extractor::UserExtractor) -> impl IntoResponse {
+    let user = user_extractor.0;
+    let template = IndexTemplate { user };
+    HtmlTemplate(template)
+}
+
+pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
+    let mut req_parts = RequestParts::new(req);
+    let body = req_parts.take_body();
+
+    //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
+    //fetch the body data as bytes
+    let body_deserialized = match crate::session::body_content::<FormFields>(body).await {
+        Ok(value) => value,
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
     crate::utils::tracing_debug(
         std::panic::Location::caller(),
-        format!("Form input: {:?}", &input),
+        format!("handle_form: Body {:?}", body_deserialized),
     )
-    .await;
+    .await
+    .into_response();
 
-    let name = input.name.to_owned();
-    let name_str = &name[..];
+    let store = &mut req_parts
+        .extensions()
+        .unwrap()
+        .get::<RedisSessionStore>()
+        .expect("`RedisSessionStore` extension missing!");
 
-    match session
-        .update(&headers, &state.redis_session_client, &name_str)
-        .await
-    {
-        Ok(_) => (),
-        Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error during Session update: {:?}", err),
-            )
-            .await;
+    //Implement the same approach as `TypedHeader<Cookie>::from_request` without causing an
+    //immutable borrow on the request.
+    let headers = if let Some(value) = req_parts.headers() {
+        value
+    } else {
+        return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .unwrap();
+    };
+
+    // Fetch existing user from store
+    let user = match crate::session::fetch::<User>(headers, store, "user").await {
+        Ok(value) => value,
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
+        }
+    };
+
+    let user_data = crate::session::User {
+        uuid: user.uuid,
+        name: body_deserialized.name.clone(),
+        email: body_deserialized.email.clone(),
+    };
+
+    // Update store
+    match crate::session::update(headers, &store, &user_data).await {
+        Ok(_) => {}
+        _ => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap();
         }
     }
 
