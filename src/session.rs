@@ -245,66 +245,6 @@ impl UserId {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct UserExtractor(pub User);
-
-#[async_trait]
-impl<B> FromRequest<B> for UserExtractor
-where
-    B: Send, // required by `async_trait`
-{
-    type Rejection = http::StatusCode;
-
-    async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<RedisSessionStore>::from_request(req)
-            .await
-            .expect("`RedisSessionStore` extension missing!");
-
-        let cookie = Option::<TypedHeader<Cookie>>::from_request(req)
-            .await
-            .unwrap();
-
-        tracing::debug!("cookie: {:?}", cookie);
-
-        let session_cookie = cookie
-            .as_ref()
-            .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
-
-        tracing::debug!(
-            "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
-            &session_cookie.unwrap()
-        );
-
-        // continue to decode the session cookie
-        let session: AsyncSession = match store
-            .load_session(session_cookie.unwrap().to_string())
-            .await
-        {
-            Ok(value) => match value {
-                Some(session_value) => session_value,
-                None => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-            },
-            Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-        };
-
-        let fetched_user = match session.get::<User>("user") {
-            Some(val) => val,
-            None => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Unable to fetch user from session!"),
-                )
-                .await;
-
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
-
-        Ok(Self(fetched_user))
-    }
-}
-
 pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, CustomError>
 where
     T: de::DeserializeOwned,

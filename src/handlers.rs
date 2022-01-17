@@ -1,7 +1,6 @@
-use crate::{errors::CustomError, session::UserExtractor};
+use crate::{errors::CustomError, extractors::user_extractor};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
-use async_session::{log::kv::ToValue, MemoryStore, Session as AsyncSession, SessionStore as _};
 use axum::{
     async_trait,
     body::{self, Body, BoxBody, Bytes, Full, HttpBody},
@@ -67,7 +66,7 @@ impl fmt::Display for FormFields {
     }
 }
 
-pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl IntoResponse {
+pub async fn show_form(user_extractor: user_extractor::UserExtractor) -> impl IntoResponse {
     let user = user_extractor.0;
     let template = IndexTemplate { user };
     HtmlTemplate(template)
