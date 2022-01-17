@@ -6,26 +6,71 @@ use axum::{
     Json,
 };
 use serde_json::{error, json, Value};
+use std::error::Error as StdError;
+use std::fmt;
 use std::io;
 use thiserror::Error;
 
-#[allow(dead_code)]
-#[derive(Error, Debug)]
-pub enum CustomError {
-    #[error("Session error!")]
-    SessionError(#[from] async_session::Error),
-    #[error("Redis SET error!")]
-    RedisSetError,
-    #[error("Configuration secret missing!")]
+type Cause = Box<dyn StdError + Send + Sync>;
+
+pub struct Error {
+    inner: Box<ErrorImpl>,
+}
+
+pub type CustomError = Error;
+
+pub fn new(kind: Kind) -> Error {
+    Error {
+        inner: Box::new(ErrorImpl { kind, cause: None }),
+    }
+}
+
+struct ErrorImpl {
+    kind: Kind,
+    cause: Option<Cause>,
+}
+
+#[derive(Debug)]
+pub enum Kind {
+    Hyper(Hyper),
     ConfigurationSecretMissing,
-    #[error("hyper Error!")]
-    HyperError,
-    #[error("NotImplementedError")]
     NotImplementedError,
 }
 
-pub type ApiError = (StatusCode, Json<Value>);
-pub type ApiResult<T> = std::result::Result<T, ApiError>;
+#[derive(Debug)]
+pub enum Hyper {
+    ParseError,
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut f = f.debug_tuple("hyper::Error");
+        f.field(&self.inner.kind);
+        if let Some(ref cause) = self.inner.cause {
+            f.field(cause);
+        }
+        f.finish()
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(ref cause) = self.inner.cause {
+            write!(f, "{}: {}", self.to_string(), cause)
+        } else {
+            f.write_str(&self.to_string())
+        }
+    }
+}
+
+impl StdError for Error {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.inner
+            .cause
+            .as_ref()
+            .map(|cause| &**cause as &(dyn StdError + 'static))
+    }
+}
 
 impl IntoResponse for CustomError {
     fn into_response(self) -> Response {
@@ -35,8 +80,8 @@ impl IntoResponse for CustomError {
     }
 }
 
-impl From<hyper::Error> for CustomError {
-    fn from(err: hyper::Error) -> CustomError {
-        CustomError::HyperError
+impl From<hyper::Error> for Error {
+    fn from(err: hyper::Error) -> Error {
+        new(Kind::Hyper(Hyper::ParseError))
     }
 }

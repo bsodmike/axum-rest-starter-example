@@ -1,5 +1,5 @@
 use crate::configure;
-use crate::errors::CustomError;
+use crate::errors::{self, Kind};
 use redis::AsyncCommands;
 use std::{collections::HashMap, env};
 
@@ -15,28 +15,28 @@ pub async fn connect(data: HashMap<&str, String>) -> redis::Client {
     if redis_host_name.as_str() == "" {
         panic!(
             "Redis hostname is missing {:?}",
-            CustomError::ConfigurationSecretMissing
+            errors::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_password.as_str() == "" {
         panic!(
             "Redis password is missing {:?}",
-            CustomError::ConfigurationSecretMissing
+            errors::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_session_db.as_str() == "" {
         panic!(
             "Redis session db is missing {:?}",
-            CustomError::ConfigurationSecretMissing
+            errors::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_port.as_str() == "" {
         panic!(
             "Redis port is missing {:?}",
-            CustomError::ConfigurationSecretMissing
+            errors::new(Kind::ConfigurationSecretMissing)
         )
     };
 
