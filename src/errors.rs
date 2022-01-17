@@ -1,5 +1,10 @@
 use async_session;
-use axum::{http::StatusCode, Json};
+use axum::{
+    body::{boxed, Full},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde_json::{error, json, Value};
 use std::io;
 use thiserror::Error;
@@ -21,6 +26,14 @@ pub enum CustomError {
 
 pub type ApiError = (StatusCode, Json<Value>);
 pub type ApiResult<T> = std::result::Result<T, ApiError>;
+
+impl IntoResponse for CustomError {
+    fn into_response(self) -> Response {
+        let mut res = Response::new(boxed(Full::from(self.to_string())));
+        *res.status_mut() = StatusCode::BAD_REQUEST;
+        res
+    }
+}
 
 impl From<hyper::Error> for CustomError {
     fn from(err: hyper::Error) -> CustomError {

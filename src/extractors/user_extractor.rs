@@ -72,7 +72,8 @@ where
                     std::panic::Location::caller(),
                     format!("Unable to fetch user from session!"),
                 )
-                .await;
+                .await
+                .into_response();
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }

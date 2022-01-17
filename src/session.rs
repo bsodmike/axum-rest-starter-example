@@ -77,7 +77,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                     std::panic::Location::caller(),
                     format!("Error: Unable to update session with user {:?}", err),
                 )
-                .await;
+                .await
+                .into_response();
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
@@ -95,7 +96,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                         std::panic::Location::caller(),
                         format!("Unable to fetch cookie value from new session!"),
                     )
-                    .await;
+                    .await
+                    .into_response();
 
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
@@ -105,7 +107,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                     std::panic::Location::caller(),
                     format!("Error whilst attempting to update store {:?}", err),
                 )
-                .await;
+                .await
+                .into_response();
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
@@ -115,7 +118,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             std::panic::Location::caller(),
             format!("Updated Session: {:?}", &session_clone.id()),
         )
-        .await;
+        .await
+        .into_response();
 
         tracing::debug!(
             "Created cookie {:?}={:?} for UUID {} / for Session: {:?}",
@@ -194,7 +198,8 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                         session_cookie_clone
                     ),
                 )
-                .await;
+                .await
+                .into_response();
 
                 return Err(StatusCode::BAD_REQUEST);
             }
@@ -265,7 +270,7 @@ where
                 std::panic::Location::caller(),
                 format!("Error: Unable to deserialize request body {:?}", err),
             )
-            .await;
+            .await?;
 
             return Err(CustomError::NotImplementedError);
         }
@@ -298,7 +303,7 @@ pub async fn update(
             &session_cookie
         ),
     )
-    .await;
+    .await?;
 
     // Use `session_cookie` to load the session
     let mut session: Session = match store.load_session(session_cookie.to_string()).await {
@@ -309,7 +314,7 @@ pub async fn update(
                     std::panic::Location::caller(),
                     format!("Error: Unable to load session!"),
                 )
-                .await;
+                .await?;
                 return Err(CustomError::NotImplementedError);
             }
         },
@@ -327,7 +332,7 @@ pub async fn update(
                 std::panic::Location::caller(),
                 format!("Error: Unable to update session with user {:?}", err),
             )
-            .await;
+            .await?;
 
             return Err(CustomError::NotImplementedError);
         }
@@ -343,7 +348,7 @@ pub async fn update(
                         cookie_value
                     ),
                 )
-                .await;
+                .await?;
 
                 cookie_value
             }
@@ -352,7 +357,7 @@ pub async fn update(
                     std::panic::Location::caller(),
                     format!("Store updated OK / No cookie value returned"),
                 )
-                .await;
+                .await?;
 
                 String::from("")
             }
@@ -362,7 +367,7 @@ pub async fn update(
                 std::panic::Location::caller(),
                 format!("Error whilst attempting to update store {:?}", err),
             )
-            .await;
+            .await?;
 
             return Err(CustomError::NotImplementedError);
         }
@@ -398,7 +403,7 @@ where
             &session_cookie
         ),
     )
-    .await;
+    .await?;
 
     // Use `session_cookie` to load the session
     let session: Session = match store.load_session(session_cookie.to_string()).await {
@@ -409,7 +414,7 @@ where
                     std::panic::Location::caller(),
                     format!("Error: Unable to load session!"),
                 )
-                .await;
+                .await?;
                 return Err(CustomError::NotImplementedError);
             }
         },
@@ -425,7 +430,7 @@ where
                 std::panic::Location::caller(),
                 format!("Unable to fetch user from session!"),
             )
-            .await;
+            .await?;
 
             return Err(CustomError::NotImplementedError);
         }

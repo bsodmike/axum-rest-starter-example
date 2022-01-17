@@ -91,7 +91,8 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         std::panic::Location::caller(),
         format!("handle_form: Body {:?}", body_deserialized),
     )
-    .await;
+    .await
+    .into_response();
 
     let store = &mut req_parts
         .extensions()
