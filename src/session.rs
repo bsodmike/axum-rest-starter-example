@@ -1,4 +1,7 @@
-use crate::{errors, errors::CustomError, AppState};
+use crate::{
+    errors::{self, Error, Kind},
+    AppState,
+};
 use async_redis_session::RedisSessionStore;
 use async_session::{log::kv::ToValue, MemoryStore, Session, SessionStore as _};
 use axum::{
@@ -150,7 +153,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         if domain.as_str() == "" {
             panic!(
                 "App domain is missing {:?}",
-                CustomError::ConfigurationSecretMissing
+                errors::new(Kind::ConfigurationSecretMissing)
             )
         };
 
@@ -253,14 +256,14 @@ impl UserId {
     }
 }
 
-pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, CustomError>
+pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
 {
     let body = if let Some(value) = body_taken {
         value
     } else {
-        return Err(CustomError::NotImplementedError);
+        return Err(errors::new(Kind::NotImplementedError));
     };
 
     let body_bytes = hyper::body::to_bytes(body).await?;
@@ -273,7 +276,7 @@ where
             )
             .await?;
 
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -284,11 +287,11 @@ pub async fn update(
     headers: &HeaderMap,
     store: &RedisSessionStore,
     user: &User,
-) -> Result<(), CustomError> {
+) -> Result<(), Error> {
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -316,11 +319,11 @@ pub async fn update(
                     format!("Error: Unable to load session!"),
                 )
                 .await?;
-                return Err(CustomError::NotImplementedError);
+                return Err(errors::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -335,7 +338,7 @@ pub async fn update(
             )
             .await?;
 
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -370,25 +373,21 @@ pub async fn update(
             )
             .await?;
 
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
     Ok(())
 }
 
-pub async fn fetch<T>(
-    headers: &HeaderMap,
-    store: &RedisSessionStore,
-    key: &str,
-) -> Result<T, CustomError>
+pub async fn fetch<T>(headers: &HeaderMap, store: &RedisSessionStore, key: &str) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
 {
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -416,11 +415,11 @@ where
                     format!("Error: Unable to load session!"),
                 )
                 .await?;
-                return Err(CustomError::NotImplementedError);
+                return Err(errors::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 
@@ -433,7 +432,7 @@ where
             )
             .await?;
 
-            return Err(CustomError::NotImplementedError);
+            return Err(errors::new(Kind::NotImplementedError));
         }
     };
 

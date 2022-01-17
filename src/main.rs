@@ -1,4 +1,5 @@
 #![allow(unused_imports)]
+use crate::errors::{Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
@@ -43,8 +44,6 @@ pub mod session;
 pub mod utils;
 pub mod wrappers;
 
-use crate::errors::{ApiResult, CustomError};
-
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
     let mut glob_path = "conf/development/*";
     let mut settings = Config::default();
@@ -83,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
     }
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::DEBUG)
         .with_file(true)
         .with_line_number(true)
         .init();
