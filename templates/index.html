@@ -7,17 +7,17 @@ index.html
     <form action="/" method="post">
       <label for="name">
         Enter your name:
-        <input type="text" name="name">
+        <input type="text" name="name" value="{{ user.name }}">
       </label>
       <label>
         Enter your email:
-        <input type="text" name="email">
+        <input type="text" name="email" value="{{ user.email }}">
       </label>
       <input type="submit" value="Subscribe!">
     </form>
 
     <div>
-      UUID: {{ uuid }}
+      UUID: {{ user.uuid }}
     </div>
   </body>
 </html>

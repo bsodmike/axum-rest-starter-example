@@ -31,7 +31,7 @@ pub async fn privacy_policy_handler() {}
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    uuid: String,
+    user: crate::session::User,
 }
 
 struct HtmlTemplate<T>(T);
@@ -68,8 +68,8 @@ impl fmt::Display for FormFields {
 }
 
 pub async fn show_form(user_extractor: crate::session::UserExtractor) -> impl IntoResponse {
-    let uuid = user_extractor.0.uuid;
-    let template = IndexTemplate { uuid };
+    let user = user_extractor.0;
+    let template = IndexTemplate { user };
     HtmlTemplate(template)
 }
 
