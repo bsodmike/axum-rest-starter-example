@@ -14,6 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
+use cookie::{self, SameSite};
 use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;
@@ -148,14 +149,15 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             )
         };
 
-        let set_cookie = HeaderValue::from_str(
-            format!(
-                "{}={}; Secure; HttpOnly; Path=/; Domain={}",
-                AXUM_SESSION_COOKIE_NAME, cookie, domain
-            )
-            .as_str(),
-        )
-        .unwrap();
+        let full_cookie = cookie::Cookie::build(AXUM_SESSION_COOKIE_NAME, &cookie)
+            .domain(&domain)
+            .path("/")
+            .secure(true)
+            .same_site(SameSite::Strict)
+            .http_only(true)
+            .finish();
+
+        let set_cookie = HeaderValue::from_str(full_cookie.to_string().as_str()).unwrap();
         headers.insert(http::header::SET_COOKIE, set_cookie);
 
         // It is also possible to call `let res = res.map(axum::body::boxed)`
