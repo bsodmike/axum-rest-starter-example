@@ -44,7 +44,6 @@ use uuid::Uuid;
 
 pub mod configure;
 pub mod errors;
-pub mod extractors;
 pub mod handlers;
 pub mod middleware;
 pub mod session;

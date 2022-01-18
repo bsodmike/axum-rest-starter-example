@@ -1,4 +1,4 @@
-use crate::{extractors::user_extractor, User};
+use crate::User;
 use app_core::error::{self, Kind};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
@@ -19,7 +19,10 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
-use axum_rest_middleware::middleware::{self as RestMiddleware};
+use axum_rest_middleware::{
+    extractors,
+    middleware::{self as RestMiddleware},
+};
 use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{de, Deserialize, Serialize};
@@ -69,7 +72,7 @@ impl fmt::Display for FormFields {
 }
 
 pub async fn show_form(
-    user_extractor: user_extractor::UserExtractor<User, RedisSessionStore>,
+    user_extractor: extractors::UserExtractor<User, RedisSessionStore>,
 ) -> impl IntoResponse {
     let user = user_extractor.0;
     let template = IndexTemplate { user };

@@ -13,6 +13,7 @@
 
 mod error;
 
+pub mod extractors;
 pub mod middleware;
 
 /// Alias for a type-erased error type.

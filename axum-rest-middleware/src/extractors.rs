@@ -1,4 +1,4 @@
-use crate::{extractors::user_extractor, AppState, User};
+use crate::middleware::{self as RestMiddleware};
 use app_core::{error, error::Error};
 use async_redis_session::RedisSessionStore;
 use async_session::{MemoryStore, Session, SessionStore};
@@ -15,7 +15,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
-use axum_rest_middleware::middleware::{self as RestMiddleware};
 use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;
@@ -72,12 +71,7 @@ where
         let fetched_user: T = match session.get::<T>("user") {
             Some(val) => val,
             None => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Unable to fetch user from session!"),
-                )
-                .await
-                .into_response();
+                tracing::error!("Unable to fetch user from session!");
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
