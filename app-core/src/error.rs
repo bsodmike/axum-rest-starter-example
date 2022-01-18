@@ -17,8 +17,6 @@ pub struct Error {
     inner: Box<ErrorImpl>,
 }
 
-pub type CustomError = Error;
-
 pub fn new(kind: Kind) -> Error {
     Error {
         inner: Box::new(ErrorImpl { kind, cause: None }),
@@ -73,7 +71,7 @@ impl StdError for Error {
     }
 }
 
-impl IntoResponse for CustomError {
+impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let mut res = Response::new(boxed(Full::from(self.to_string())));
         *res.status_mut() = StatusCode::BAD_REQUEST;

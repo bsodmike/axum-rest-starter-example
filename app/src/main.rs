@@ -5,7 +5,7 @@
 #![allow(unused_imports)]
 #![warn(rust_2018_idioms, future_incompatible, nonstandard_style)]
 
-use crate::errors::{Error, Kind};
+use app_core::error::{Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;

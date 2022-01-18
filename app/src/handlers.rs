@@ -1,4 +1,5 @@
-use crate::{errors::CustomError, extractors::user_extractor, session::User};
+use crate::{extractors::user_extractor, session::User};
+use app_core::error::{self, Kind};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
 use axum::{

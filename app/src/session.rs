@@ -1,7 +1,5 @@
-use crate::{
-    errors::{self, Error, Kind},
-    AppState,
-};
+use crate::AppState;
+use app_core::error::{self, Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{log::kv::ToValue, MemoryStore, Session, SessionStore as _};
 use axum::{
@@ -153,7 +151,7 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         if domain.as_str() == "" {
             panic!(
                 "App domain is missing {:?}",
-                errors::new(Kind::ConfigurationSecretMissing)
+                error::new(Kind::ConfigurationSecretMissing)
             )
         };
 
@@ -263,7 +261,7 @@ where
     let body = if let Some(value) = body_taken {
         value
     } else {
-        return Err(errors::new(Kind::NotImplementedError));
+        return Err(error::new(Kind::NotImplementedError));
     };
 
     let body_bytes = hyper::body::to_bytes(body).await?;
@@ -276,7 +274,7 @@ where
             )
             .await?;
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -291,7 +289,7 @@ pub async fn update(
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -319,11 +317,11 @@ pub async fn update(
                     format!("Error: Unable to load session!"),
                 )
                 .await?;
-                return Err(errors::new(Kind::NotImplementedError));
+                return Err(error::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -338,7 +336,7 @@ pub async fn update(
             )
             .await?;
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -373,7 +371,7 @@ pub async fn update(
             )
             .await?;
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -387,7 +385,7 @@ where
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -415,11 +413,11 @@ where
                     format!("Error: Unable to load session!"),
                 )
                 .await?;
-                return Err(errors::new(Kind::NotImplementedError));
+                return Err(error::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -432,7 +430,7 @@ where
             )
             .await?;
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
