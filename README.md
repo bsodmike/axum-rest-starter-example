@@ -1,6 +1,11 @@
-# register-otp
+# axum-rest-starter-example
 
 [![CI](https://github.com/bsodmike/register_otp/actions/workflows/rust.yml/badge.svg)](https://github.com/bsodmike/register_otp/actions/workflows/rust.yml)
+
+## TODO
+
+- Add CSRF
+- CORS?
 
 ## Dev Setup
 
