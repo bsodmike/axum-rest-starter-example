@@ -11,27 +11,27 @@ pub async fn print_request_info_middleware(
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let (parts, body) = req.into_parts();
 
-    println!("Request body:");
-    dbg!(&body);
+    tracing::debug!("Request headers:");
+    dbg!(&parts.headers);
+
+    tracing::debug!("Request body:");
     let bytes = buffer_and_print("request", body).await?;
 
-    println!("Request parts:");
-    dbg!(&parts);
+    tracing::debug!("Request parts:");
     let req = Request::from_parts(parts, Body::from(bytes));
 
     let res = next.run(req).await;
 
     let headers = res.headers();
+    tracing::debug!("Response headers:");
     dbg!(headers);
 
     let (parts, body) = res.into_parts();
 
-    println!("Response body:");
-    dbg!(&body);
+    tracing::debug!("Response body:");
     let bytes = buffer_and_print("response", body).await?;
 
-    println!("Response parts:");
-    dbg!(&parts);
+    tracing::debug!("Response parts:");
     let res = Response::from_parts(parts, Body::from(bytes));
 
     Ok(res)

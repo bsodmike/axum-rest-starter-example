@@ -1,9 +1,9 @@
 use crate::{
-    errors::{self, Error, Kind},
-    AppState,
+    error::{self, Error, ErrorImpl, Kind},
+    BoxError,
 };
 use async_redis_session::RedisSessionStore;
-use async_session::{log::kv::ToValue, MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session, SessionStore};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -23,17 +23,40 @@ use rand::RngCore;
 use redis::AsyncCommands;
 use redis::Client;
 use serde::{de, Deserialize, Serialize};
-use std::{fmt::format, str::FromStr};
+use std::error::Error as ErrorTrait;
+use std::str::FromStr;
 use tracing::Instrument;
 use uuid::Uuid;
 
-pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
+pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
-pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
+pub async fn session<
+    B,
+    T: std::marker::Sync + SessionStore,
+    U: Default + std::marker::Sync + Serialize,
+>(
+    mut req: Request<B>,
+    next: Next<B>,
+) -> impl IntoResponse {
+    // Fetch domain from env var
+    let domain = match std::env::var("DOMAIN") {
+        Ok(value) => value,
+        Err(err) => panic!("$DOMAIN is not set: {:?}", err),
+    };
+    dbg!(&domain);
+
+    if domain.as_str() == "" {
+        panic!(
+            "App domain is missing {:?}",
+            error::new(Kind::EnvironmentVariableMissing)
+        )
+    };
+
+    // Fetch SessionStore
     let store = req
         .extensions()
-        .get::<RedisSessionStore>()
+        .get::<T>()
         .expect("`RedisSessionStore` extension missing!");
 
     let headers = req.headers();
@@ -67,22 +90,10 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
         /*
          * Initialise a new user instance with new UUID
          */
-        match session.insert(
-            "user",
-            User {
-                uuid: Uuid::new_v4().to_string(),
-                name: String::from(""),
-                email: String::from(""),
-            },
-        ) {
+        match session.insert("user", U::default()) {
             Ok(value) => value,
             Err(err) => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Error: Unable to update session with user {:?}", err),
-                )
-                .await
-                .into_response();
+                tracing::error!("Error: Unable to update session with user {:?}", err);
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
@@ -96,34 +107,19 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             Ok(value) => match value {
                 Some(cookie_value) => cookie_value,
                 None => {
-                    crate::utils::tracing_error(
-                        std::panic::Location::caller(),
-                        format!("Unable to fetch cookie value from new session!"),
-                    )
-                    .await
-                    .into_response();
+                    tracing::error!("Unable to fetch cookie value from new session!");
 
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
                 }
             },
             Err(err) => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Error whilst attempting to update store {:?}", err),
-                )
-                .await
-                .into_response();
+                tracing::error!("Error whilst attempting to update store {:?}", err);
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 
-        crate::utils::tracing_debug(
-            std::panic::Location::caller(),
-            format!("Updated Session: {:?}", &session_clone.id()),
-        )
-        .await
-        .into_response();
+        tracing::debug!("Updated Session: {:?}", &session_clone.id());
 
         tracing::debug!(
             "Created cookie {:?}={:?} for UUID {} / for Session: {:?}",
@@ -147,15 +143,6 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
             http::header::LOCATION,
             req.uri().to_string().parse().unwrap(),
         );
-
-        let domain: String =
-            crate::configure::fetch::<String>(String::from("domain")).unwrap_or_default();
-        if domain.as_str() == "" {
-            panic!(
-                "App domain is missing {:?}",
-                errors::new(Kind::ConfigurationSecretMissing)
-            )
-        };
 
         let full_cookie = cookie::Cookie::build(AXUM_SESSION_COOKIE_NAME, &cookie)
             .domain(&domain)
@@ -195,15 +182,10 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
                  * FIXME: ideally, we should generate a new session and redirect the user to the
                  * path they've requested.
                  */
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!(
-                        "Error! Unable to locate session in backend! Cookie: {:?}",
-                        session_cookie_clone
-                    ),
-                )
-                .await
-                .into_response();
+                tracing::error!(
+                    "Error! Unable to locate session in backend! Cookie: {:?}",
+                    session_cookie_clone
+                );
 
                 return Err(StatusCode::BAD_REQUEST);
             }
@@ -235,13 +217,6 @@ pub async fn session_uuid_middleware<B>(mut req: Request<B>, next: Next<B>) -> i
     Ok(res)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct User {
-    pub uuid: String,
-    pub name: String,
-    pub email: String,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct UserId(pub Uuid);
 
@@ -256,6 +231,12 @@ impl UserId {
     }
 }
 
+impl Default for UserId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
@@ -263,67 +244,56 @@ where
     let body = if let Some(value) = body_taken {
         value
     } else {
-        return Err(errors::new(Kind::NotImplementedError));
+        return Err(error::new(Kind::NotImplementedError));
     };
 
     let body_bytes = hyper::body::to_bytes(body).await?;
     let body_deserialized = match serde_urlencoded::from_bytes::<T>(&body_bytes) {
         Ok(value) => value,
         Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error: Unable to deserialize request body {:?}", err),
-            )
-            .await?;
+            tracing::error!("Error: Unable to deserialize request body {:?}", err);
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
     Ok(body_deserialized)
 }
 
-pub async fn update(
+pub async fn update<U: Serialize>(
     headers: &HeaderMap,
     store: &RedisSessionStore,
-    user: &User,
+    user: U,
 ) -> Result<(), Error> {
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
     let session_cookie = &cookie_result
-        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
+        .get(AXUM_SESSION_COOKIE_NAME)
         .expect("Unable to fetch session cookie!");
 
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!(
-            "handle_form: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
-            &session_cookie
-        ),
-    )
-    .await?;
+    tracing::debug!(
+        "handle_form: got session cookie from user agent, {:?}={:?}",
+        AXUM_SESSION_COOKIE_NAME,
+        &session_cookie
+    );
 
     // Use `session_cookie` to load the session
     let mut session: Session = match store.load_session(session_cookie.to_string()).await {
         Ok(value) => match value {
             Some(session_value) => session_value,
             None => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Error: Unable to load session!"),
-                )
-                .await?;
-                return Err(errors::new(Kind::NotImplementedError));
+                tracing::error!("Error: Unable to load session!");
+
+                return Err(error::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -332,48 +302,32 @@ pub async fn update(
     match session.insert("user", user) {
         Ok(value) => value,
         Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error: Unable to update session with user {:?}", err),
-            )
-            .await?;
+            tracing::error!("Error: Unable to update session with user {:?}", err);
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
     let _: String = match store.store_session(session).await {
         Ok(value) => match value {
             Some(cookie_value) => {
-                crate::utils::tracing_debug(
-                    std::panic::Location::caller(),
-                    format!(
-                        "Store updated OK / Cookie value returned {:?}",
-                        cookie_value
-                    ),
-                )
-                .await?;
+                tracing::debug!(
+                    "Store updated OK / Cookie value returned {:?}",
+                    cookie_value
+                );
 
                 cookie_value
             }
             None => {
-                crate::utils::tracing_debug(
-                    std::panic::Location::caller(),
-                    format!("Store updated OK / No cookie value returned"),
-                )
-                .await?;
+                tracing::debug!("Store updated OK / No cookie value returned");
 
                 String::from("")
             }
         },
         Err(err) => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Error whilst attempting to update store {:?}", err),
-            )
-            .await?;
+            tracing::error!("Error whilst attempting to update store {:?}", err);
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
@@ -387,52 +341,52 @@ where
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),
         _ => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 
     let session_cookie = &cookie_result
-        .get(crate::session::AXUM_SESSION_COOKIE_NAME)
+        .get(AXUM_SESSION_COOKIE_NAME)
         .expect("Unable to fetch session cookie!");
 
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!(
-            "handle_form: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
-            &session_cookie
-        ),
-    )
-    .await?;
+    tracing::debug!(
+        "handle_form: got session cookie from user agent, {:?}={:?}",
+        AXUM_SESSION_COOKIE_NAME,
+        &session_cookie
+    );
 
     // Use `session_cookie` to load the session
     let session: Session = match store.load_session(session_cookie.to_string()).await {
         Ok(value) => match value {
             Some(session_value) => session_value,
             None => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Error: Unable to load session!"),
-                )
-                .await?;
-                return Err(errors::new(Kind::NotImplementedError));
+                tracing::error!("Error: Unable to load session!");
+
+                return Err(error::new(Kind::NotImplementedError));
             }
         },
         Err(err) => {
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
+
+            //FIXME need to solve error handling approach
+            //`async-session` does not implement `std::error::Error` for it's re-export of
+            //`anyhow::Error`.
+            //let error = Error {
+            //    inner: Box::new(error::ErrorImpl {
+            //        kind: Kind::NotImplementedError,
+            //        cause: Some(Box::new(err)),
+            //    }),
+            //};
+            //return Err(error);
         }
     };
 
     let session_fetched: T = match session.get::<T>(key) {
         Some(val) => val,
         None => {
-            crate::utils::tracing_error(
-                std::panic::Location::caller(),
-                format!("Unable to fetch user from session!"),
-            )
-            .await?;
+            tracing::error!("Unable to fetch user from session!");
 
-            return Err(errors::new(Kind::NotImplementedError));
+            return Err(error::new(Kind::NotImplementedError));
         }
     };
 

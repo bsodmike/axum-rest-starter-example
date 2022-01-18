@@ -1,5 +1,5 @@
 use crate::configure;
-use crate::errors::{self, Kind};
+use app_core::error::{self, Kind};
 use redis::AsyncCommands;
 use std::{collections::HashMap, env};
 
@@ -15,28 +15,28 @@ pub async fn connect(data: HashMap<&str, String>) -> redis::Client {
     if redis_host_name.as_str() == "" {
         panic!(
             "Redis hostname is missing {:?}",
-            errors::new(Kind::ConfigurationSecretMissing)
+            error::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_password.as_str() == "" {
         panic!(
             "Redis password is missing {:?}",
-            errors::new(Kind::ConfigurationSecretMissing)
+            error::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_session_db.as_str() == "" {
         panic!(
             "Redis session db is missing {:?}",
-            errors::new(Kind::ConfigurationSecretMissing)
+            error::new(Kind::ConfigurationSecretMissing)
         )
     };
 
     if redis_port.as_str() == "" {
         panic!(
             "Redis port is missing {:?}",
-            errors::new(Kind::ConfigurationSecretMissing)
+            error::new(Kind::ConfigurationSecretMissing)
         )
     };
 
@@ -57,7 +57,7 @@ pub async fn connect(data: HashMap<&str, String>) -> redis::Client {
         "{}://{}:{}/{}",
         uri_scheme, redis_host_name, redis_port, redis_session_db
     );
-    println!("->> Redis connecting to URL: {}\n", redis_conn_url);
+    tracing::info!("Connecting to URL: {}\n", redis_conn_url);
 
     redis::Client::open(redis_conn_url).expect("Failed to connect to Redis")
 }

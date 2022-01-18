@@ -1,6 +1,7 @@
-use crate::{errors, errors::CustomError, extractors::user_extractor, session::User, AppState};
+use crate::middleware::{self as RestMiddleware};
+use app_core::{error, error::Error};
 use async_redis_session::RedisSessionStore;
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session, SessionStore};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -23,17 +24,19 @@ use std::{fmt::format, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct UserExtractor(pub crate::session::User);
+pub struct UserExtractor<T, S>(pub T, S);
 
 #[async_trait]
-impl<B> FromRequest<B> for UserExtractor
+impl<B, T, S> FromRequest<B> for UserExtractor<T, S>
 where
     B: Send, // required by `async_trait`
+    T: de::DeserializeOwned + Send,
+    S: SessionStore,
 {
     type Rejection = http::StatusCode;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<RedisSessionStore>::from_request(req)
+        let Extension(store) = Extension::<S>::from_request(req)
             .await
             .expect("`RedisSessionStore` extension missing!");
 
@@ -45,11 +48,11 @@ where
 
         let session_cookie = cookie
             .as_ref()
-            .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
+            .and_then(|cookie| cookie.get(RestMiddleware::AXUM_SESSION_COOKIE_NAME));
 
         tracing::debug!(
             "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
+            RestMiddleware::AXUM_SESSION_COOKIE_NAME,
             &session_cookie.unwrap()
         );
 
@@ -65,20 +68,15 @@ where
             Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
         };
 
-        let fetched_user = match session.get::<User>("user") {
+        let fetched_user: T = match session.get::<T>("user") {
             Some(val) => val,
             None => {
-                crate::utils::tracing_error(
-                    std::panic::Location::caller(),
-                    format!("Unable to fetch user from session!"),
-                )
-                .await
-                .into_response();
+                tracing::error!("Unable to fetch user from session!");
 
                 return Err(StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
 
-        Ok(Self(fetched_user))
+        Ok(Self(fetched_user, store))
     }
 }

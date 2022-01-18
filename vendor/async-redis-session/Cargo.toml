@@ -14,10 +14,8 @@ publish = false
 
 [dependencies.redis]
 version = "0.21"
-features = ["aio", "async-std-comp"]
+features = ["aio", "tokio-comp"]
 
 [dependencies]
 async-session = "3.0.0"
-
-[dev-dependencies]
-async-std = { version = "1.9.0", features = ["attributes"] }
+tokio = { version = "1", features = ["full"] }

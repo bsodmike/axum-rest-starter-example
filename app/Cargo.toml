@@ -1,0 +1,37 @@
+[package]
+name = "register_otp"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+app-core = { path  = "../app-core/" }
+axum-rest-middleware = { path = "../axum-rest-middleware/" }
+anyhow = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.4", features = ["headers"] }
+axum-extra = "0.1.1"
+redis = { version = "0.21", features = ["aio", "tokio-comp"] }
+tracing = "0.1"
+tracing-subscriber = { version="0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+once_cell = "1.9.0"
+config = "0.11.0"
+glob = "0.3.0"
+tower = { version = "0.4.11", features = ["limit", "filter", "util"] }
+tower-http = { version = "0.2.0", features = ["trace"] }
+hyper = { version = "0.14", features = ["full"] }
+async-session = "3.0.0"
+async-redis-session = { path = "../vendor/async-redis-session" }
+uuid = { version = "0.8", features = ["v4", "serde"] }
+askama = "0.10"
+rand = "0.8.4"
+base64 = "0.13.0"
+futures = "0.3.19"
+serde_urlencoded = "0.7.0"
+cookie = "0.16"
+

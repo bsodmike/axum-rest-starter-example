@@ -1,4 +1,4 @@
-use super::errors::CustomError;
+use app_core::error::Error;
 use std::collections::HashMap;
 
 pub struct ConfigInfo<V> {
@@ -51,7 +51,7 @@ mod private {
     impl<V> Sealed for super::ConfigInfo<V> {}
 }
 
-pub fn fetch<T>(flag: String) -> Result<T, CustomError>
+pub fn fetch<T>(flag: String) -> Result<T, Error>
 where
     // Trait bound to implement FetchFromConfig<T> for ConfigInfo<String>,
     // to allow it to call `fetch_config` as defined by the trait, returning T.

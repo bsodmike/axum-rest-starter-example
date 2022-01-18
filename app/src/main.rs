@@ -1,5 +1,11 @@
+//! This is the main application
+
+#![forbid(unsafe_code)]
+#![deny(unreachable_pub, private_in_public)]
 #![allow(unused_imports)]
-use crate::errors::{Error, Kind};
+#![warn(rust_2018_idioms, future_incompatible, nonstandard_style)]
+
+use app_core::error::{Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
@@ -19,13 +25,13 @@ use axum::{
     AddExtensionLayer, Json,
 };
 use axum_extra::middleware::{self as axum_middleware, Next};
+use axum_rest_middleware::{self, middleware as RestMiddleware};
 use config::*;
 use glob::glob;
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use session::session_uuid_middleware;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::{collections::HashMap, env};
@@ -34,14 +40,11 @@ use tower::{
     ServiceBuilder,
 };
 use tower_http::trace::TraceLayer;
+use uuid::Uuid;
 
 pub mod configure;
-pub mod errors;
-pub mod extractors;
 pub mod handlers;
 pub mod middleware;
-pub mod session;
-pub mod utils;
 pub mod wrappers;
 
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
@@ -73,6 +76,23 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 #[allow(dead_code)]
 pub struct AppState {
     redis_session_client: redis::Client,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct User {
+    pub uuid: String,
+    pub name: String,
+    pub email: String,
+}
+
+impl Default for User {
+    fn default() -> Self {
+        User {
+            uuid: Uuid::new_v4().to_string(),
+            name: String::from(""),
+            email: String::from(""),
+        }
+    }
 }
 
 #[tokio::main]
@@ -110,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
-            session::session_uuid_middleware,
+            RestMiddleware::session::<_, RedisSessionStore, User>,
         ));
 
     // build our application with some routes
