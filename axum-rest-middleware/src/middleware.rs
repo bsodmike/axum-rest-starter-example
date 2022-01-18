@@ -31,7 +31,11 @@ use uuid::Uuid;
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
-pub async fn session<B, T: std::marker::Sync + SessionStore>(
+pub async fn session<
+    B,
+    T: std::marker::Sync + SessionStore,
+    U: Default + std::marker::Sync + Serialize,
+>(
     mut req: Request<B>,
     next: Next<B>,
 ) -> impl IntoResponse {
@@ -86,14 +90,7 @@ pub async fn session<B, T: std::marker::Sync + SessionStore>(
         /*
          * Initialise a new user instance with new UUID
          */
-        match session.insert(
-            "user",
-            User {
-                uuid: Uuid::new_v4().to_string(),
-                name: String::from(""),
-                email: String::from(""),
-            },
-        ) {
+        match session.insert("user", U::default()) {
             Ok(value) => value,
             Err(err) => {
                 tracing::error!("Error: Unable to update session with user {:?}", err);
@@ -220,13 +217,6 @@ pub async fn session<B, T: std::marker::Sync + SessionStore>(
     Ok(res)
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct User {
-    pub uuid: String,
-    pub name: String,
-    pub email: String,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct UserId(pub Uuid);
 
@@ -264,10 +254,10 @@ where
     Ok(body_deserialized)
 }
 
-pub async fn update(
+pub async fn update<U: Serialize>(
     headers: &HeaderMap,
     store: &RedisSessionStore,
-    user: &User,
+    user: U,
 ) -> Result<(), Error> {
     let cookie_result = match headers.typed_try_get::<Cookie>() {
         Ok(Some(value)) => TypedHeader(value),

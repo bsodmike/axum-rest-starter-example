@@ -1,4 +1,4 @@
-use crate::extractors::user_extractor;
+use crate::{extractors::user_extractor, User};
 use app_core::error::{self, Kind};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
@@ -19,7 +19,7 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
-use axum_rest_middleware::middleware::{self as RestMiddleware, User};
+use axum_rest_middleware::middleware::{self as RestMiddleware};
 use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{de, Deserialize, Serialize};
@@ -32,7 +32,7 @@ pub async fn privacy_policy_handler() {}
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    user: RestMiddleware::User,
+    user: User,
 }
 
 struct HtmlTemplate<T>(T);
@@ -124,7 +124,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         }
     };
 
-    let user_data = RestMiddleware::User {
+    let user_data = crate::User {
         uuid: user.uuid,
         name: body_deserialized.name.clone(),
         email: body_deserialized.email.clone(),

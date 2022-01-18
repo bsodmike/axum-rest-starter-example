@@ -1,4 +1,4 @@
-use crate::{extractors::user_extractor, AppState};
+use crate::{extractors::user_extractor, AppState, User};
 use app_core::{error, error::Error};
 use async_redis_session::RedisSessionStore;
 use async_session::{MemoryStore, Session, SessionStore as _};
@@ -15,7 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
-use axum_rest_middleware::middleware::{self as RestMiddleware, User};
+use axum_rest_middleware::middleware::{self as RestMiddleware};
 use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;

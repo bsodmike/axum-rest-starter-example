@@ -40,6 +40,7 @@ use tower::{
     ServiceBuilder,
 };
 use tower_http::trace::TraceLayer;
+use uuid::Uuid;
 
 pub mod configure;
 pub mod errors;
@@ -81,6 +82,23 @@ pub struct AppState {
     redis_session_client: redis::Client,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct User {
+    pub uuid: String,
+    pub name: String,
+    pub email: String,
+}
+
+impl Default for User {
+    fn default() -> Self {
+        User {
+            uuid: Uuid::new_v4().to_string(),
+            name: String::from(""),
+            email: String::from(""),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set the RUST_LOG, if it hasn't been explicitly defined
@@ -116,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
-            RestMiddleware::session::<_, RedisSessionStore>,
+            RestMiddleware::session::<_, RedisSessionStore, User>,
         ));
 
     // build our application with some routes
