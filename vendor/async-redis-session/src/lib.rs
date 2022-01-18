@@ -3,8 +3,9 @@
 //! use async_redis_session::RedisSessionStore;
 //! use async_session::{Session, SessionStore};
 //!
-//! # fn main() -> async_session::Result { async_std::task::block_on(async {
-//! let store = RedisSessionStore::new("redis://127.0.0.1/")?;
+//! # #[tokio::main]
+//! async fn main() -> async_session::Result {
+//! let store = RedisSessionStore::new("redis://127.0.0.1")?;
 //!
 //! let mut session = Session::new();
 //! session.insert("key", "value")?;
@@ -12,7 +13,7 @@
 //! let cookie_value = store.store_session(session).await?.unwrap();
 //! let session = store.load_session(cookie_value).await?.unwrap();
 //! assert_eq!(&session.get::<String>("key").unwrap(), "value");
-//! # Ok(()) }) }
+//! # Ok(())  }
 //! ```
 
 #![forbid(unsafe_code, future_incompatible)]
@@ -177,6 +178,7 @@ mod tests {
         store
     }
 
+    #[ignore]
     #[tokio::test]
     async fn creating_a_new_session_with_no_expiry() -> Result {
         let store = test_store().await;
@@ -193,6 +195,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn updating_a_session() -> Result {
         let store = test_store().await;
@@ -212,6 +215,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn updating_a_session_extending_expiry() -> Result {
         let store = test_store().await;
@@ -243,6 +247,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn creating_a_new_session_with_expiry() -> Result {
         let store = test_store().await;
@@ -268,6 +273,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn destroying_a_single_session() -> Result {
         let store = test_store().await;
@@ -287,6 +293,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn clearing_the_whole_store() -> Result {
         let store = test_store().await;
@@ -301,6 +308,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn prefixes() -> Result {
         test_store().await; // clear the db
