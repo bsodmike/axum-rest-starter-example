@@ -28,6 +28,21 @@ pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
 pub async fn session<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
+    // Fetch domain from env var
+    let domain = match std::env::var("DOMAIN") {
+        Ok(value) => value,
+        Err(err) => panic!("$DOMAIN is not set: {:?}", err),
+    };
+    dbg!(&domain);
+
+    if domain.as_str() == "" {
+        panic!(
+            "App domain is missing {:?}",
+            error::new(Kind::ConfigurationSecretMissing)
+        )
+    };
+
+    // Fetch SessionStore
     let store = req
         .extensions()
         .get::<RedisSessionStore>()
@@ -124,17 +139,6 @@ pub async fn session<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse
             http::header::LOCATION,
             req.uri().to_string().parse().unwrap(),
         );
-
-        // FIXME: This needs to be fetched from config
-        //let domain: String =
-        //    crate::configure::fetch::<String>(String::from("domain")).unwrap_or_default();
-        let domain = String::from("localhost");
-        if domain.as_str() == "" {
-            panic!(
-                "App domain is missing {:?}",
-                error::new(Kind::ConfigurationSecretMissing)
-            )
-        };
 
         let full_cookie = cookie::Cookie::build(AXUM_SESSION_COOKIE_NAME, &cookie)
             .domain(&domain)
