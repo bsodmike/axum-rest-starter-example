@@ -28,7 +28,7 @@ use std::str::FromStr;
 use tracing::Instrument;
 use uuid::Uuid;
 
-pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
+pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
 pub async fn session<

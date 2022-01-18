@@ -57,7 +57,7 @@ pub async fn connect(data: HashMap<&str, String>) -> redis::Client {
         "{}://{}:{}/{}",
         uri_scheme, redis_host_name, redis_port, redis_session_db
     );
-    println!("->> Redis connecting to URL: {}\n", redis_conn_url);
+    tracing::info!("Connecting to URL: {}\n", redis_conn_url);
 
     redis::Client::open(redis_conn_url).expect("Failed to connect to Redis")
 }
