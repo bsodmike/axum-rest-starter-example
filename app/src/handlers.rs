@@ -94,12 +94,8 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
                 .unwrap();
         }
     };
-    crate::utils::tracing_debug(
-        std::panic::Location::caller(),
-        format!("handle_form: Body {:?}", body_deserialized),
-    )
-    .await
-    .into_response();
+
+    tracing::debug!("handle_form: Body {:?}", body_deserialized);
 
     let store = &mut req_parts
         .extensions()
@@ -136,7 +132,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     };
 
     // Update store
-    match RestMiddleware::update(headers, &store, &user_data).await {
+    match RestMiddleware::update(headers, store, &user_data).await {
         Ok(_) => {}
         _ => {
             return Response::builder()

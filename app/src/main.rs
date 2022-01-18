@@ -43,11 +43,8 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 pub mod configure;
-pub mod errors;
 pub mod handlers;
 pub mod middleware;
-pub mod session;
-pub mod utils;
 pub mod wrappers;
 
 pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {

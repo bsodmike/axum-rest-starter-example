@@ -231,6 +231,12 @@ impl UserId {
     }
 }
 
+impl Default for UserId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub async fn body_content<T>(body_taken: Option<Body>) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
