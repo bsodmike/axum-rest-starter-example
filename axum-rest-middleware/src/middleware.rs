@@ -370,6 +370,8 @@ where
             return Err(error::new(Kind::NotImplementedError));
 
             //FIXME need to solve error handling approach
+            //`async-session` does not implement `std::error::Error` for it's re-export of
+            //`anyhow::Error`.
             //let error = Error {
             //    inner: Box::new(error::ErrorImpl {
             //        kind: Kind::NotImplementedError,
