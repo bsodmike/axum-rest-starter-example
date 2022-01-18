@@ -1,4 +1,10 @@
+//! This is the main application
+
+#![forbid(unsafe_code)]
+#![deny(unreachable_pub, private_in_public)]
 #![allow(unused_imports)]
+#![warn(rust_2018_idioms, future_incompatible, nonstandard_style)]
+
 use crate::errors::{Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{Session, SessionStore as _};
