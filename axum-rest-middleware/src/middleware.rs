@@ -3,7 +3,7 @@ use crate::{
     BoxError,
 };
 use async_redis_session::RedisSessionStore;
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session, SessionStore};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -31,7 +31,10 @@ use uuid::Uuid;
 pub const AXUM_SESSION_COOKIE_NAME: &str = "axum-session-cookie";
 pub const AXUM_SESSION_ID: &str = "axum-session-id";
 
-pub async fn session<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse {
+pub async fn session<B, T: std::marker::Sync + SessionStore>(
+    mut req: Request<B>,
+    next: Next<B>,
+) -> impl IntoResponse {
     // Fetch domain from env var
     let domain = match std::env::var("DOMAIN") {
         Ok(value) => value,
@@ -49,7 +52,7 @@ pub async fn session<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse
     // Fetch SessionStore
     let store = req
         .extensions()
-        .get::<RedisSessionStore>()
+        .get::<T>()
         .expect("`RedisSessionStore` extension missing!");
 
     let headers = req.headers();

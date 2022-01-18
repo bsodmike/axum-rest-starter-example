@@ -115,7 +115,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             crate::middleware::debugging::print_request_info_middleware,
         ))
         .layer(AddExtensionLayer::new(store))
-        .layer(axum_extra::middleware::from_fn(RestMiddleware::session));
+        .layer(axum_extra::middleware::from_fn(
+            RestMiddleware::session::<_, RedisSessionStore>,
+        ));
 
     // build our application with some routes
     let app = Router::new()
