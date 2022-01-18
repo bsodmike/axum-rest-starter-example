@@ -68,7 +68,9 @@ impl fmt::Display for FormFields {
     }
 }
 
-pub async fn show_form(user_extractor: user_extractor::UserExtractor) -> impl IntoResponse {
+pub async fn show_form(
+    user_extractor: user_extractor::UserExtractor<User, RedisSessionStore>,
+) -> impl IntoResponse {
     let user = user_extractor.0;
     let template = IndexTemplate { user };
     HtmlTemplate(template)

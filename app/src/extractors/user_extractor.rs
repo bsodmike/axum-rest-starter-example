@@ -1,7 +1,7 @@
 use crate::{extractors::user_extractor, AppState, User};
 use app_core::{error, error::Error};
 use async_redis_session::RedisSessionStore;
-use async_session::{MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session, SessionStore};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
@@ -25,17 +25,19 @@ use std::{fmt::format, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct UserExtractor(pub User);
+pub struct UserExtractor<T, S>(pub T, S);
 
 #[async_trait]
-impl<B> FromRequest<B> for UserExtractor
+impl<B, T, S> FromRequest<B> for UserExtractor<T, S>
 where
     B: Send, // required by `async_trait`
+    T: de::DeserializeOwned + Send,
+    S: SessionStore,
 {
     type Rejection = http::StatusCode;
 
     async fn from_request(req: &mut RequestParts<B>) -> Result<Self, Self::Rejection> {
-        let Extension(store) = Extension::<RedisSessionStore>::from_request(req)
+        let Extension(store) = Extension::<S>::from_request(req)
             .await
             .expect("`RedisSessionStore` extension missing!");
 
@@ -67,7 +69,7 @@ where
             Err(err) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
         };
 
-        let fetched_user = match session.get::<User>("user") {
+        let fetched_user: T = match session.get::<T>("user") {
             Some(val) => val,
             None => {
                 crate::utils::tracing_error(
@@ -81,6 +83,6 @@ where
             }
         };
 
-        Ok(Self(fetched_user))
+        Ok(Self(fetched_user, store))
     }
 }
