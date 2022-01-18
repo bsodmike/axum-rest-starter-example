@@ -109,7 +109,7 @@ impl RedisSessionStore {
     }
 
     async fn connection(&self) -> RedisResult<Connection> {
-        self.client.get_async_std_connection().await
+        self.client.get_tokio_connection().await
     }
 }
 

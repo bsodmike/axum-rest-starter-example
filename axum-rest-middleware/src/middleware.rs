@@ -1,6 +1,6 @@
 use app_core::error::{self, Error, Kind};
 use async_redis_session::RedisSessionStore;
-use async_session::{log::kv::ToValue, MemoryStore, Session, SessionStore as _};
+use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::{
     async_trait,
     body::{Body, BoxBody, HttpBody},
