@@ -11,4 +11,9 @@
     //missing_docs
 )]
 
+mod error;
+
 pub mod middleware;
+
+/// Alias for a type-erased error type.
+pub(crate) type BoxError = Box<dyn std::error::Error + Send + Sync>;

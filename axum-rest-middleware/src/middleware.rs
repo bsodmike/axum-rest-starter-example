@@ -1,4 +1,7 @@
-use app_core::error::{self, Error, Kind};
+use crate::{
+    error::{self, Error, ErrorImpl, Kind},
+    BoxError,
+};
 use async_redis_session::RedisSessionStore;
 use async_session::{MemoryStore, Session, SessionStore as _};
 use axum::{
@@ -20,7 +23,8 @@ use rand::RngCore;
 use redis::AsyncCommands;
 use redis::Client;
 use serde::{de, Deserialize, Serialize};
-use std::{fmt::format, str::FromStr};
+use std::error::Error as ErrorTrait;
+use std::str::FromStr;
 use tracing::Instrument;
 use uuid::Uuid;
 
@@ -38,7 +42,7 @@ pub async fn session<B>(mut req: Request<B>, next: Next<B>) -> impl IntoResponse
     if domain.as_str() == "" {
         panic!(
             "App domain is missing {:?}",
-            error::new(Kind::ConfigurationSecretMissing)
+            error::new(Kind::EnvironmentVariableMissing)
         )
     };
 
@@ -364,6 +368,15 @@ where
         },
         Err(err) => {
             return Err(error::new(Kind::NotImplementedError));
+
+            //FIXME need to solve error handling approach
+            //let error = Error {
+            //    inner: Box::new(error::ErrorImpl {
+            //        kind: Kind::NotImplementedError,
+            //        cause: Some(Box::new(err)),
+            //    }),
+            //};
+            //return Err(error);
         }
     };
 
