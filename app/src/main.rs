@@ -25,13 +25,13 @@ use axum::{
     AddExtensionLayer, Json,
 };
 use axum_extra::middleware::{self as axum_middleware, Next};
+use axum_rest_middleware::{self, middleware as RestMiddleware};
 use config::*;
 use glob::glob;
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use session::session_uuid_middleware;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::{collections::HashMap, env};
@@ -115,9 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             crate::middleware::debugging::print_request_info_middleware,
         ))
         .layer(AddExtensionLayer::new(store))
-        .layer(axum_extra::middleware::from_fn(
-            session::session_uuid_middleware,
-        ));
+        .layer(axum_extra::middleware::from_fn(RestMiddleware::session));
 
     // build our application with some routes
     let app = Router::new()

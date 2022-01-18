@@ -1,4 +1,4 @@
-use crate::{extractors::user_extractor, session::User, AppState};
+use crate::{extractors::user_extractor, AppState};
 use app_core::{error, error::Error};
 use async_redis_session::RedisSessionStore;
 use async_session::{MemoryStore, Session, SessionStore as _};
@@ -15,6 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum_extra::middleware::{self, Next};
+use axum_rest_middleware::middleware::{self as RestMiddleware, User};
 use futures::future::TryFutureExt;
 use rand::RngCore;
 use redis::AsyncCommands;
@@ -24,7 +25,7 @@ use std::{fmt::format, str::FromStr};
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct UserExtractor(pub crate::session::User);
+pub struct UserExtractor(pub User);
 
 #[async_trait]
 impl<B> FromRequest<B> for UserExtractor
@@ -46,11 +47,11 @@ where
 
         let session_cookie = cookie
             .as_ref()
-            .and_then(|cookie| cookie.get(crate::session::AXUM_SESSION_COOKIE_NAME));
+            .and_then(|cookie| cookie.get(RestMiddleware::AXUM_SESSION_COOKIE_NAME));
 
         tracing::debug!(
             "session_uuid_middleware: got session cookie from user agent, {:?}={:?}",
-            crate::session::AXUM_SESSION_COOKIE_NAME,
+            RestMiddleware::AXUM_SESSION_COOKIE_NAME,
             &session_cookie.unwrap()
         );
 

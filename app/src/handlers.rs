@@ -1,4 +1,4 @@
-use crate::{extractors::user_extractor, session::User};
+use crate::extractors::user_extractor;
 use app_core::error::{self, Kind};
 use askama::Template;
 use async_redis_session::RedisSessionStore;
@@ -19,6 +19,7 @@ use axum::{
     routing::{get, post, Router},
     AddExtensionLayer, Json,
 };
+use axum_rest_middleware::middleware::{self as RestMiddleware, User};
 use hyper::body::Buf;
 use redis::AsyncCommands;
 use serde::{de, Deserialize, Serialize};
@@ -31,7 +32,7 @@ pub async fn privacy_policy_handler() {}
 #[derive(Template)]
 #[template(path = "index.html")]
 struct IndexTemplate {
-    user: crate::session::User,
+    user: RestMiddleware::User,
 }
 
 struct HtmlTemplate<T>(T);
@@ -79,7 +80,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
 
     //Instead of using `Bytes::from_request`, as this also causes an immutable borrow, use hyper to
     //fetch the body data as bytes
-    let body_deserialized = match crate::session::body_content::<FormFields>(body).await {
+    let body_deserialized = match RestMiddleware::body_content::<FormFields>(body).await {
         Ok(value) => value,
         _ => {
             return Response::builder()
@@ -113,7 +114,7 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
     };
 
     // Fetch existing user from store
-    let user = match crate::session::fetch::<User>(headers, store, "user").await {
+    let user = match RestMiddleware::fetch::<User>(headers, store, "user").await {
         Ok(value) => value,
         _ => {
             return Response::builder()
@@ -123,14 +124,14 @@ pub async fn handle_form(req: Request<Body>) -> impl IntoResponse {
         }
     };
 
-    let user_data = crate::session::User {
+    let user_data = RestMiddleware::User {
         uuid: user.uuid,
         name: body_deserialized.name.clone(),
         email: body_deserialized.email.clone(),
     };
 
     // Update store
-    match crate::session::update(headers, &store, &user_data).await {
+    match RestMiddleware::update(headers, &store, &user_data).await {
         Ok(_) => {}
         _ => {
             return Response::builder()

@@ -8,5 +8,7 @@
     future_incompatible,
     nonstandard_style,
     missing_debug_implementations,
-    missing_docs
+    //missing_docs
 )]
+
+pub mod middleware;

@@ -337,6 +337,34 @@ dependencies = [
 [[package]]
 name = "axum-rest-middleware"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "app-core",
+ "askama",
+ "async-redis-session",
+ "async-session",
+ "axum",
+ "axum-extra",
+ "base64",
+ "config",
+ "cookie",
+ "futures",
+ "glob",
+ "hyper",
+ "once_cell",
+ "rand",
+ "redis",
+ "serde 1.0.133",
+ "serde_json",
+ "serde_urlencoded",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "base64"
@@ -1364,6 +1392,7 @@ dependencies = [
  "async-session",
  "axum",
  "axum-extra",
+ "axum-rest-middleware",
  "base64",
  "config",
  "cookie",
