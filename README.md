@@ -23,3 +23,9 @@ redis_port: 6400
 ```
 
 (3) Run `cargo run` to run the Axum frontend and visit http://localhost:3000
+
+## License Information
+
+Please review the LICENSE file for license information.
+
+Distributed as-is; no warranty is given.
