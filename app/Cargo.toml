@@ -1,5 +1,5 @@
 [package]
-name = "register_otp"
+name = "axum_rest_starter_example"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["full"] }
 axum = { version = "0.4", features = ["headers"] }
 axum-extra = "0.1.1"
 redis = { version = "0.21", features = ["aio", "tokio-comp"] }
+#sqlx = "0.5.10"
 tracing = "0.1"
 tracing-subscriber = { version="0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -34,4 +35,7 @@ base64 = "0.13.0"
 futures = "0.3.19"
 serde_urlencoded = "0.7.0"
 cookie = "0.16"
-
+jsonwebtoken = "7.2"
+regex = "1.5"
+chrono = "0.4.19"
+validator = { version = "0.12", features = ["derive"] }

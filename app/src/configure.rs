@@ -1,4 +1,4 @@
-use app_core::error::Error;
+use app_core::error::{self, Error, Kind};
 use std::collections::HashMap;
 
 pub struct ConfigInfo<V> {
@@ -51,7 +51,7 @@ mod private {
     impl<V> Sealed for super::ConfigInfo<V> {}
 }
 
-pub fn fetch<T>(flag: String) -> Result<T, Error>
+pub fn fetch<T>(flag: &str) -> Result<T, Error>
 where
     // Trait bound to implement FetchFromConfig<T> for ConfigInfo<String>,
     // to allow it to call `fetch_config` as defined by the trait, returning T.
@@ -62,6 +62,32 @@ where
         Err(error) => panic!("Error: {:?}", error),
     };
 
-    let cli_info = ConfigInfo { flag };
+    let cli_info = ConfigInfo {
+        flag: String::from(flag),
+    };
     Ok(cli_info.fetch_config(&config))
+}
+
+pub async fn fetch_configuration(key: &str) -> Result<String, error::Error> {
+    let result: String = match fetch::<String>(key) {
+        Ok(value) if value.is_empty() => {
+            tracing::error!("Configuration string {:?} is blank!", key);
+
+            let mut new_err = error::new(Kind::ConfigurationSecretEmpty);
+            new_err.set_cause(format!("Configuration string {:?} is blank!", key).into());
+
+            return Err(new_err);
+        }
+        Ok(value) => value,
+        Err(err) => {
+            tracing::error!("Configuration string {:?} is blank!", key);
+
+            let mut new_err = error::new(Kind::ConfigurationSecretMissing);
+            new_err.set_cause(Box::new(err));
+
+            return Err(new_err);
+        }
+    };
+
+    Ok(result)
 }

@@ -5,7 +5,7 @@
 #![allow(unused_imports)]
 #![warn(rust_2018_idioms, future_incompatible, nonstandard_style)]
 
-use app_core::error::{Error, Kind};
+use app_core::error::{self, Error, Kind};
 use async_redis_session::RedisSessionStore;
 use async_session::{Session, SessionStore as _};
 use axum::headers::HeaderMapExt;
@@ -28,11 +28,11 @@ use axum_extra::middleware::{self as axum_middleware, Next};
 use axum_rest_middleware::{self, middleware as RestMiddleware};
 use config::*;
 use glob::glob;
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use once_cell::sync::Lazy;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::{collections::HashMap, env};
 use tower::{
@@ -42,6 +42,8 @@ use tower::{
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
+pub mod api;
+pub mod auth;
 pub mod configure;
 pub mod handlers;
 pub mod middleware;
@@ -76,6 +78,15 @@ pub static CONFIG: Lazy<config::Config> = Lazy::new(|| {
 #[allow(dead_code)]
 pub struct AppState {
     redis_session_client: redis::Client,
+    jwt_config: JWTConfig,
+}
+
+#[derive(Clone)]
+#[allow(dead_code)]
+pub struct JWTConfig {
+    keys: auth::jwt::Keys,
+    client_id: String,
+    client_secret: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -99,7 +110,10 @@ impl Default for User {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set the RUST_LOG, if it hasn't been explicitly defined
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "register_otp=debug,tower_http=debug")
+        std::env::set_var(
+            "RUST_LOG",
+            "axum_rest_starter_example=debug,tower_http=debug",
+        )
     }
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
@@ -107,18 +121,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_line_number(true)
         .init();
 
-    let redis_session_db: String = configure::fetch::<String>(String::from("redis_session_db"))
-        .expect("Redis Session DB configuration missing!");
+    let redis_session_db: String = configure::fetch_configuration("redis_session_db").await?;
 
     let session_client =
         crate::wrappers::redis_wrapper::connect(HashMap::from([("db", redis_session_db.clone())]))
-            .await;
+            .await?;
+
+    let jwt_secret: String = configure::fetch_configuration("jwt_secret").await?;
+    let jwt_client_id: String = configure::fetch_configuration("jwt_client_id").await?;
+    let jwt_client_secret: String = configure::fetch_configuration("jwt_client_secret").await?;
+
     let app_state = AppState {
         redis_session_client: crate::wrappers::redis_wrapper::connect(HashMap::from([(
             "db",
             redis_session_db,
         )]))
-        .await,
+        .await?,
+        jwt_config: JWTConfig {
+            keys: auth::jwt::Keys::new(jwt_secret.as_bytes()),
+            client_id: jwt_client_id,
+            client_secret: jwt_client_secret,
+        },
     };
     let store = RedisSessionStore::from_client(session_client);
 
@@ -131,12 +154,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(AddExtensionLayer::new(store))
         .layer(axum_extra::middleware::from_fn(
             RestMiddleware::session::<_, RedisSessionStore, User>,
-        ));
+        ))
+        .layer(axum_extra::middleware::from_fn(auth::jwt::api_auth));
 
     // build our application with some routes
     let app = Router::new()
         .route("/", get(handlers::show_form).post(handlers::handle_form))
         .route("/privacy-policy", get(handlers::privacy_policy_handler))
+        .route("/authorize", post(auth::jwt::authorize))
+        .route("/api/protected", get(api::protected))
+        .route(
+            "/api/v1/drops/:drop_id/registrations",
+            post(api::handle_registration_post),
+        )
         .layer(middleware_stack);
 
     // add a fallback service for handling routes to unknown paths
